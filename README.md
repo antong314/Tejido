@@ -1,12 +1,68 @@
 # Tejido
 
-AI-facilitated group deliberation prototype. See [PRD.md](PRD.md) for the full
-product spec.
+AI-facilitated group deliberation prototype. Part of the **Tejido** project.
+See [PRD.md](PRD.md) for the full product spec.
 
-Six participants each have a 20–30 minute private conversation with a Telegram
-bot about a shared question, decide per-point what may be shared with the
-group, and reconvene in person to discuss a one-page synthesis the facilitator
-generates from the transcripts.
+## Why Tejido
+
+**The name.** *Tejido* is Spanish for "weave" or "fabric" — the cloth you get
+when many separate threads come together with care, each one still visible in
+the whole. That's the metaphor. Every participant in a group has something to
+say; a good deliberation doesn't average their voices into mush, it weaves
+them together so the group sees the whole fabric without losing any one
+thread. (This repo holds *Circle*, the first concrete implementation: a small
+Telegram bot for one 6-person session at a time. Tejido is the broader
+project — the same weaving principle applied at different scales and through
+different channels.)
+
+**The problem.** Groups facing real decisions usually fall into one of two
+failure modes:
+
+1. **Long group discussion threads** (WhatsApp, Telegram, group email).
+   Organic, easy to start, low effort. But the loudest voices dominate, the
+   earliest commenters anchor the framing, the quiet ones stay silent, nuance
+   is lost in length, and after a hundred messages nobody holds the whole
+   picture in their head. The thread becomes about who's persuasive, not
+   about what's true or what matters most.
+
+2. **Voting and surveys.** Clean and decisive, but they flatten nuance.
+   "Support" / "oppose" doesn't capture "I support this for reason X but
+   would prefer Y" or "I oppose because of one specific caveat." A tally
+   shows the headline but hides the texture — you don't know *why* people
+   voted as they did, what they cared about, or what would change their
+   mind. And surveys can only measure positions; they can't help anyone
+   develop one.
+
+Both approaches treat the group as either too connected (everyone shouting
+in one thread) or too disconnected (numbers in a tally with no story). The
+slow, careful middle is missing: each person gets the time and attention to
+articulate what they actually think, and the group then sees those threads
+woven together without losing the people behind them.
+
+**What Tejido does.** Each participant has a private 20–30 minute
+conversation with a thoughtful AI facilitator about the same question. They
+think out loud — including the parts they haven't worked out — without
+performing for the group. They choose, point by point, what gets shared
+(by name, anonymously, or kept private). The system then weaves the
+conversations into a one-page synthesis (or a concrete draft proposal) the
+facilitator reads aloud when the group reconvenes in person.
+
+|                                       | Long discussion thread | Vote / survey   | Tejido               |
+| ------------------------------------- | ---------------------- | --------------- | -------------------- |
+| Every voice gets real room            | No                     | Briefly         | Yes — deeply         |
+| Captures nuance                       | In theory              | No              | Yes                  |
+| Group can actually read it            | After 50 msgs, no      | Yes             | Yes (one page)       |
+| Surfaces the *why*, not just position | Sometimes              | No              | Yes                  |
+| Surfaces real disagreement            | Buried in scroll       | Just the tally  | Explicitly named     |
+| Loudest voices dominate               | Yes                    | No              | No                   |
+| Time cost                             | Asynchronous, ongoing  | Minutes         | One sitting          |
+| Replaces the in-person meeting        | Often does, badly      | Sometimes       | No — sets it up      |
+
+Tejido is not a replacement for the group meeting. It's an instrument the
+facilitator uses to bring better material *into* the meeting — so when the
+group sits down together, every voice is already in the room and the
+facilitator can spend the time on real disagreement instead of on getting
+people to speak up.
 
 ## Architecture
 
