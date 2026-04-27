@@ -1,0 +1,17 @@
+.env
+data/
+syntheses/
+proposals/
+models/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.DS_Store
+
+# Session configs contain real participant Telegram handles and may reference
+# community-specific context. Treat them as private. The example template
+# below is the only one tracked.
+config/session_*.yaml
+!config/session_config.example.yaml

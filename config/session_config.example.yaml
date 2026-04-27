@@ -1,0 +1,65 @@
+# Copy this file to `session_config.yaml` (or `session_<your-name>.yaml`) and
+# edit. Real session configs are gitignored — this example is the only one
+# tracked in the repo.
+
+session_id: "example_session"
+
+question: |
+  Replace this with the question your group is exploring. The facilitator AI
+  will probe nuance around it for each participant.
+
+  If your question has multiple sub-parts, number them — the synthesis and
+  proposal modes will organize their output by sub-question:
+
+  1. First sub-question with concrete examples for the AI to probe.
+  2. Second sub-question.
+  3. Third sub-question.
+
+context: |
+  Optional. Background the facilitator AI can draw on when probing edges of a
+  participant's view. Not shown to participants unless they ask. If your
+  question contains numbered sub-parts, you can also use this field to give
+  the AI guidance about coverage (e.g. "let participants pick whichever
+  sub-question is most alive for them, but get at least a first-pass view on
+  all three").
+
+community_context: |
+  Optional. Used by synthesis and proposal modes to ground the output in your
+  community's specific context — e.g. shared values, prior decisions, named
+  principles. Without this the synthesis can feel generic. Leave empty if you
+  don't have it yet.
+
+participants:
+  # Six entries by default — the prototype is built for groups of about six.
+  # `handle` is the Telegram @username (with or without the @).
+  # `display_name` is how the participant appears in syntheses and proposals
+  # (when their permission allows attribution).
+  - handle: "@example_handle_1"
+    display_name: "Participant One"
+  - handle: "@example_handle_2"
+    display_name: "Participant Two"
+  - handle: "@example_handle_3"
+    display_name: "Participant Three"
+  - handle: "@example_handle_4"
+    display_name: "Participant Four"
+  - handle: "@example_handle_5"
+    display_name: "Participant Five"
+  - handle: "@example_handle_6"
+    display_name: "Participant Six"
+
+language: "auto"
+
+# Facilitator model: handles the per-participant conversation in real time.
+facilitator_model: "claude-sonnet-4-5"
+
+# Synthesis / proposal model: handles the post-session document generation.
+# Opus 4.7 produces noticeably better synthesis and proposal output than
+# Sonnet on multi-part deliberation questions.
+synthesis_model: "claude-opus-4-7"
+
+whisper:
+  # Whisper.cpp model for local voice transcription. `medium` (~1.5 GB) is the
+  # default; `tiny` / `base` / `small` / `large-v3` also work. The first run
+  # downloads the weights into models/.
+  model: "medium"
+  models_dir: "models/"
