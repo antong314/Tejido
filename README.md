@@ -1,7 +1,7 @@
 # Tejido
 
-AI-facilitated group deliberation prototype. Part of the **Tejido** project.
-See [PRD.md](PRD.md) for the full product spec.
+AI-facilitated group deliberation prototype. See [PRD.md](PRD.md) for the full
+product spec.
 
 ## Why Tejido
 
