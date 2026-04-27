@@ -1,4 +1,4 @@
-# Circle
+# Tejido
 
 AI-facilitated group deliberation prototype. See [PRD.md](PRD.md) for the full
 product spec.
