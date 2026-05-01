@@ -152,7 +152,9 @@ class StateEndpointTests(unittest.TestCase):
         self.assertEqual(body["participant_name"], "Anton")
         self.assertEqual(body["session_id"], SESSION_ID)
         self.assertEqual(body["question"], "Test?")
-        self.assertEqual(body["phase"], "not_started")
+        # /join transitions NOT_STARTED → AWAITING_CONSENT so the
+        # frontend can render the welcome card with the consent button.
+        self.assertEqual(body["phase"], "awaiting_consent")
         self.assertEqual(body["transcript"], [])
         self.assertEqual(body["extracted_points"], [])
         self.assertEqual(body["additions"], [])

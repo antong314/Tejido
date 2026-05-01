@@ -76,15 +76,24 @@ export function deriveInitialMessages(state: StateResponse): ChatMessage[] {
 
   // 2. If we're mid-flow, reconstruct the active prompt.
   switch (state.phase) {
-    case "awaiting_consent":
+    case "awaiting_consent": {
+      // Mirrors WELCOME_TEMPLATE in src/circle/controller/consent.py.
+      // Kept on the frontend (not persisted) because it's surface UX,
+      // not durable conversation content.
+      const welcome =
+        `Welcome, ${state.participant_name}.\n\n` +
+        `We're going to spend the next 10 minutes or so thinking together about a question your group is exploring. This is a private conversation — only you will see what we say here, and nothing leaves this chat without your explicit permission at the end.\n\n` +
+        `The question is:\n\n` +
+        `<b>${state.question}</b>\n\n` +
+        `You can type, or send voice messages — whichever feels easier. There's no right answer and nothing to prepare. When you're ready, tap below and we'll begin.`;
       messages.push({
         id: nextId(),
         role: "assistant",
         content: [
           {
             type: "choice_prompt",
-            text: state.question,
-            parse_mode: "plain",
+            text: welcome,
+            parse_mode: "html",
             choices: [
               { label: "I'm ready, let's begin", callback_data: "consent:ready" },
             ],
@@ -94,6 +103,7 @@ export function deriveInitialMessages(state: StateResponse): ChatMessage[] {
         ],
       });
       break;
+    }
 
     case "in_permissions": {
       const total = state.extracted_points.length;

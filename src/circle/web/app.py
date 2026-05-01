@@ -46,6 +46,7 @@ from ..controller.identity import (
     claim_name,
 )
 from ..runtime import BotContext
+from ..state import Phase
 from ..storage import load_participant
 from ..whisper_client import TranscriptionError, make_temp_audio
 from .dispatch import InvalidCallbackError, dispatch_callback
@@ -205,10 +206,16 @@ def create_app(context: BotContext) -> FastAPI:
             )
 
         # Materialize the participant: writes the JSON file and registers
-        # the entry in _index.json. Subsequent calls with this
-        # participant_id will load instead of re-creating.
+        # the entry in _index.json. Then immediately transition them past
+        # NOT_STARTED → AWAITING_CONSENT so the frontend can render the
+        # welcome card (the Telegram surface gets this transition for
+        # free via /start; the web surface needs it on /join because
+        # there's no separate "start" action).
         async with context.lock_for(participant_id):
-            context.load_or_create(participant_id, display_name)
+            state = context.load_or_create(participant_id, display_name)
+            if state.phase == Phase.NOT_STARTED:
+                state.transition_to(Phase.AWAITING_CONSENT)
+                context.save(state)
 
         logger.info(
             "web join session=%s participant_id=%s display_name=%s",

@@ -191,15 +191,17 @@ class MessageEndpointTests(unittest.TestCase):
         self.assertEqual(r.status_code, 404)
         self.assertEqual(r.json()["detail"]["code"], "participant_not_found")
 
-    def test_message_in_not_started_phase_emits_nudge(self) -> None:
+    def test_message_in_awaiting_consent_phase_emits_nudge(self) -> None:
+        # After /join, the participant is in AWAITING_CONSENT (waiting on
+        # the welcome-card button). A free-text submission at this point
+        # gets nudged toward the button instead of being added to the
+        # transcript.
         client, _, _ = _build_test_client(self)
         pid, _ = _create_participant(client)
         r = client.post(f"/api/p/{pid}/message", json={"text": "hi"})
-        # Controller emits a "send /start" nudge; phase stays not_started.
         self.assertEqual(r.status_code, 200)
         s = client.get(f"/api/p/{pid}/state").json()
-        self.assertEqual(s["phase"], "not_started")
-        # Transcript still empty — nothing was added to the conversation.
+        self.assertEqual(s["phase"], "awaiting_consent")
         self.assertEqual(s["transcript"], [])
 
 

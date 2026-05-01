@@ -17,7 +17,6 @@ const nextMsgId = () => `evt-${++_eventCounter}`;
 export function Chat({ participantId, displayName, onResetIdentity }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [phase, setPhase] = useState<Phase>("not_started");
-  const [question, setQuestion] = useState<string>("");
   const [typing, setTyping] = useState(false);
   const [pending, setPending] = useState(false);
   const [draft, setDraft] = useState("");
@@ -34,7 +33,6 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
         if (cancelled) return;
         setMessages(deriveInitialMessages(s));
         setPhase(s.phase);
-        setQuestion(s.question);
         setBootstrapped(true);
       } catch (e) {
         if (cancelled) return;
@@ -183,17 +181,8 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-neutral-200 bg-white px-4 py-3">
-        <div>
-          <div className="text-sm font-medium text-neutral-900">
-            {displayName}
-          </div>
-          {question && (
-            <div className="text-xs text-neutral-500 line-clamp-1">
-              {question}
-            </div>
-          )}
-        </div>
+      <header className="flex items-center justify-between border-b border-neutral-200 bg-white/80 backdrop-blur px-6 py-3">
+        <div className="text-sm font-medium text-neutral-900">{displayName}</div>
         <button
           type="button"
           onClick={onResetIdentity}
@@ -204,8 +193,8 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
         </button>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="mx-auto max-w-2xl space-y-4">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-8">
+        <div className="mx-auto max-w-2xl space-y-5">
           {messages.map((m) => (
             <MessageBubble
               key={m.id}
@@ -214,10 +203,10 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
             />
           ))}
           {typing && (
-            <div className="flex items-center gap-2 text-sm text-neutral-500">
-              <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:0ms]" />
-              <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:150ms]" />
-              <span className="inline-block h-1.5 w-1.5 animate-bounce rounded-full bg-neutral-400 [animation-delay:300ms]" />
+            <div className="flex items-center gap-1.5 px-2">
+              <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:0ms]" />
+              <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:150ms]" />
+              <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:300ms]" />
             </div>
           )}
         </div>
@@ -279,10 +268,13 @@ function MessageBubble({
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
         className={[
-          "max-w-[85%] rounded-2xl px-4 py-3 text-sm",
           isUser
-            ? "bg-neutral-900 text-white"
-            : "bg-white border border-neutral-200 text-neutral-800",
+            ? "max-w-[85%] rounded-2xl px-4 py-3 text-[15px] leading-relaxed bg-neutral-900 text-white"
+            // Assistant messages render edge-to-edge within the
+            // centered column, no card chrome — cleaner reading rhythm
+            // and a feel closer to a long-form conversation than a
+            // chatroom of stacked bubbles.
+            : "max-w-full text-[15px] leading-relaxed text-neutral-800",
         ].join(" ")}
       >
         {message.content.map((part, i) => {
@@ -303,6 +295,7 @@ function MessageBubble({
                 key={i}
                 participantId={participantId}
                 text={part.text}
+                parseMode={part.parse_mode}
                 choices={part.choices}
                 resolved={part.resolved}
                 resolvedText={part.resolvedText}
