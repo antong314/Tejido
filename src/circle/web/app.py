@@ -2,8 +2,9 @@
 
 Routes:
   GET  /                                — redirects to the session URL
-  GET  /s/{session_id}                  — minimal HTML page (placeholder
-                                           until the React frontend lands)
+  GET  /s/{session_id}                  — serves the React app (or, if
+                                           web/dist isn't built yet, a
+                                           minimal placeholder)
   POST /api/s/{session_id}/join         — claim a name, get a participant_id
   GET  /api/p/{participant_id}/state    — current JSON state for the
                                            frontend to bootstrap from
@@ -19,10 +20,17 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Path as PathParam
-from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from ..controller import conversation as conversation_controller
@@ -36,6 +44,11 @@ from ..storage import load_participant
 from .dispatch import InvalidCallbackError, dispatch_callback
 from .render_action import action_to_json
 from .sse import SSEHub
+
+
+# Built React app lives at <repo_root>/web/dist. Resolved relative to the
+# package install location: src/circle/web/app.py → ../../../web/dist.
+_FRONTEND_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 logger = logging.getLogger(__name__)
 
@@ -132,12 +145,27 @@ def create_app(context: BotContext) -> FastAPI:
             status_code=307,
         )
 
-    @app.get("/s/{session_id}", response_class=HTMLResponse, include_in_schema=False)
+    @app.get("/s/{session_id}", include_in_schema=False)
     async def session_page(
         session_id: Annotated[str, PathParam(pattern=_SESSION_ID_PATTERN)],
-    ) -> HTMLResponse:
+    ):
         _ensure_session_match(context, session_id)
+        # Prefer the built React app; fall back to the minimal placeholder
+        # if `web/dist` doesn't exist yet (useful for backend-only dev).
+        index_path = _FRONTEND_DIST / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
         return HTMLResponse(_PLACEHOLDER_HTML.replace("{{SESSION_ID}}", session_id))
+
+    # Serve the React app's static assets (JS, CSS, images) under /assets/*.
+    # Mounted only when the build output exists; in API-only dev the paths
+    # 404 cleanly so it's obvious you need to `npm run build`.
+    if _FRONTEND_DIST.exists() and (_FRONTEND_DIST / "assets").exists():
+        app.mount(
+            "/assets",
+            StaticFiles(directory=str(_FRONTEND_DIST / "assets")),
+            name="frontend_assets",
+        )
 
     @app.post(
         "/api/s/{session_id}/join",

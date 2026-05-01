@@ -79,8 +79,11 @@ class JoinEndpointTests(unittest.TestCase):
     def test_session_page_renders(self) -> None:
         r = self.client.get(f"/s/{SESSION_ID}")
         self.assertEqual(r.status_code, 200)
+        # Either the built React app's index.html (when web/dist exists) or
+        # the placeholder HTML (when it doesn't) — both contain "Tejido".
         self.assertIn("Tejido", r.text)
-        self.assertIn(SESSION_ID, r.text)
+        # The React app reads session_id from window.location at runtime,
+        # so we don't assert on it being present in the HTML.
 
     def test_session_page_404s_unknown_session(self) -> None:
         r = self.client.get("/s/wrong_session")
