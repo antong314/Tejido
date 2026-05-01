@@ -72,6 +72,22 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
       setPhase(event.phase);
       return;
     }
+    if (event.type === "user_message") {
+      // Server-echoed user input — currently only fires on the voice
+      // path; text submissions are optimistically rendered by the
+      // sender's client (see handleSend below).
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: nextMsgId(),
+          role: "user",
+          content: [
+            { type: "text", text: event.text, parse_mode: "plain" },
+          ],
+        },
+      ]);
+      return;
+    }
     setTyping(false);
 
     if (event.type === "text") {

@@ -21,7 +21,12 @@ export type ServerEvent =
   | { type: "typing" }
   // Emitted by the web adapter after every controller drain so the
   // frontend's input-enabled state stays in sync with the state machine.
-  | { type: "phase_update"; phase: Phase };
+  | { type: "phase_update"; phase: Phase }
+  // Echoes a user-side input so it renders as a chat bubble. Currently
+  // only emitted on the voice path (text path is optimistically added
+  // by the sender's own client). `via` distinguishes how the input was
+  // produced — same field name as the on-disk transcript turn.
+  | { type: "user_message"; text: string; via: "text" | "voice" };
 
 // REST: GET /api/p/{id}/state
 export interface StateResponse {

@@ -348,6 +348,16 @@ def create_app(context: BotContext) -> FastAPI:
                 },
             )
 
+        # Echo the transcribed text back as a user_message event so the
+        # participant sees their own bubble alongside the AI's reply.
+        # The text path optimistically renders the user bubble in the
+        # frontend; the voice path can't, because the frontend doesn't
+        # know what was said until Whisper returns.
+        await sse_hub.broadcast(
+            participant_id,
+            {"type": "user_message", "text": result.text, "via": "voice"},
+        )
+
         actions = conversation_controller.handle_message(
             participant_id=participant_id,
             display_name=display_name,
