@@ -271,6 +271,7 @@ def create_app(context: BotContext) -> FastAPI:
         )
         async for action in actions:
             await sse_hub.broadcast(participant_id, action_to_json(action))
+        await _broadcast_phase(context, sse_hub, participant_id)
         return AckResponse()
 
     @app.post(
@@ -302,6 +303,7 @@ def create_app(context: BotContext) -> FastAPI:
 
         async for action in actions:
             await sse_hub.broadcast(participant_id, action_to_json(action))
+        await _broadcast_phase(context, sse_hub, participant_id)
         return AckResponse()
 
     @app.post(
@@ -356,6 +358,7 @@ def create_app(context: BotContext) -> FastAPI:
         )
         async for action in actions:
             await sse_hub.broadcast(participant_id, action_to_json(action))
+        await _broadcast_phase(context, sse_hub, participant_id)
         return AckResponse()
 
     @app.get("/api/p/{participant_id}/events")
@@ -385,6 +388,25 @@ def create_app(context: BotContext) -> FastAPI:
         )
 
     return app
+
+
+async def _broadcast_phase(
+    context: BotContext, sse_hub: SSEHub, participant_id: str
+) -> None:
+    """Emit a `phase_update` SSE event with the participant's current phase.
+
+    Called after every controller drain (post_message, post_callback,
+    post_audio). The frontend listens for this so its input-enabled
+    state stays in sync with the state machine — without it, the
+    consent-button tap leaves the textarea disabled forever.
+    """
+    raw = load_participant(context.config.data_dir, participant_id)
+    if raw is None:
+        return
+    phase = raw.get("phase", "")
+    await sse_hub.broadcast(
+        participant_id, {"type": "phase_update", "phase": phase}
+    )
 
 
 def _suffix_for_audio(filename: str | None, content_type: str | None) -> str:

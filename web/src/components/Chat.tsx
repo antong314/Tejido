@@ -68,6 +68,10 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
       setTyping(true);
       return;
     }
+    if (event.type === "phase_update") {
+      setPhase(event.phase);
+      return;
+    }
     setTyping(false);
 
     if (event.type === "text") {
@@ -317,8 +321,8 @@ function renderInlineMarkup(s: string, allowHtml: boolean): string {
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
     return escaped
-      .replace(/&lt;b&gt;(.+?)&lt;\/b&gt;/g, "<strong>$1</strong>")
-      .replace(/&lt;i&gt;(.+?)&lt;\/i&gt;/g, "<em>$1</em>");
+      .replace(/&lt;b&gt;(.+?)&lt;\/b&gt;/gs, "<strong>$1</strong>")
+      .replace(/&lt;i&gt;(.+?)&lt;\/i&gt;/gs, "<em>$1</em>");
   }
   // Plain text: just escape.
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

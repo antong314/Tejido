@@ -18,7 +18,10 @@ export type ServerEvent =
       choices: Choice[];
     }
   | { type: "resolve_choice"; text: string | null; parse_mode: ParseMode }
-  | { type: "typing" };
+  | { type: "typing" }
+  // Emitted by the web adapter after every controller drain so the
+  // frontend's input-enabled state stays in sync with the state machine.
+  | { type: "phase_update"; phase: Phase };
 
 // REST: GET /api/p/{id}/state
 export interface StateResponse {
