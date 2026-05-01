@@ -40,7 +40,7 @@ def build_handlers(context: BotContext) -> list:
         user = update.effective_user
         if chat is None or user is None:
             return
-        participant_id, display_name = resolve_telegram_identity(context, user)
+        participant_id, display_name = resolve_telegram_identity(user)
         await render_stream(
             commands_controller.handle_done(
                 participant_id=participant_id,
@@ -58,7 +58,7 @@ def build_handlers(context: BotContext) -> list:
         choice = (query.data or "").split(":", 1)[1] if ":" in (query.data or "") else ""
         if choice not in _VALID_YES_NO:
             return
-        participant_id, display_name = resolve_telegram_identity(context, query.from_user)
+        participant_id, display_name = resolve_telegram_identity(query.from_user)
         await render_stream(
             commands_controller.handle_done_callback(
                 participant_id=participant_id,
@@ -75,7 +75,7 @@ def build_handlers(context: BotContext) -> list:
         user = update.effective_user
         if chat is None or user is None:
             return
-        participant_id, display_name = resolve_telegram_identity(context, user)
+        participant_id, display_name = resolve_telegram_identity(user)
         await render_stream(
             commands_controller.handle_permissions_command(
                 participant_id=participant_id,
@@ -102,7 +102,7 @@ def build_handlers(context: BotContext) -> list:
         choice = (query.data or "").split(":", 1)[1] if ":" in (query.data or "") else ""
         if choice not in _VALID_YES_NO:
             return
-        participant_id, display_name = resolve_telegram_identity(context, query.from_user)
+        participant_id, display_name = resolve_telegram_identity(query.from_user)
         await render_stream(
             commands_controller.handle_restart_callback(
                 participant_id=participant_id,

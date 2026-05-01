@@ -1,26 +1,26 @@
 """Session and environment configuration loading.
 
 Implements PRD section 7 (per-session config) and validates the environment
-the bot needs to run. The session config matches the example in PRD section 10
-plus a `whisper` block for the local pywhispercpp model selection.
+the bot needs to run. The session config keeps a `whisper` block for the
+local pywhispercpp model selection.
+
+There is intentionally no `participants` list. Both surfaces (Telegram bot
+and web UI) accept any joiner: Telegram uses `first_name` as the display
+name; web prompts for one. Sharing the URL or the bot username is the only
+gate. See `circle.controller.identity` for the shared dupe-check logic
+(used by the web join endpoint; Telegram disambiguates by `user.id` so it
+doesn't need it).
 """
 
 from __future__ import annotations
 
 import os
 import shutil
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 from dotenv import load_dotenv
-
-
-@dataclass(frozen=True)
-class Participant:
-    handle: str
-    display_name: str
 
 
 @dataclass(frozen=True)
@@ -35,7 +35,6 @@ class SessionConfig:
     question: str
     context: str
     community_context: str
-    participants: list[Participant]
     language: str
     facilitator_model: str
     synthesis_model: str
@@ -83,34 +82,14 @@ def load_session_config(path: str | Path) -> SessionConfig:
     if not isinstance(raw, dict):
         raise ConfigError(f"Session config must be a YAML mapping: {config_path}")
 
-    required_keys = ("session_id", "question", "participants")
+    required_keys = ("session_id", "question")
     missing = [key for key in required_keys if key not in raw]
     if missing:
         raise ConfigError(f"Session config missing required keys: {missing}")
 
-    raw_participants = raw.get("participants") or []
-    if not isinstance(raw_participants, list):
-        raise ConfigError("`participants` must be a list")
-
-    participants: list[Participant] = []
-    for index, entry in enumerate(raw_participants):
-        if not isinstance(entry, dict):
-            raise ConfigError(f"participants[{index}] must be a mapping")
-        handle = (entry.get("handle") or "").strip()
-        display_name = (entry.get("display_name") or "").strip()
-        if not handle or not display_name:
-            raise ConfigError(
-                f"participants[{index}] must have non-empty `handle` and `display_name`"
-            )
-        participants.append(Participant(handle=handle, display_name=display_name))
-
-    # PRD section 1.3: prototype is for a 6-person group. Warn rather than fail
-    # so the facilitator can rehearse with fewer participants.
-    if len(participants) != 6:
-        print(
-            f"warning: expected 6 participants, found {len(participants)}",
-            file=sys.stderr,
-        )
+    # `participants` is no longer used. Older configs may still include it;
+    # we silently ignore it rather than erroring, so the same YAML keeps
+    # working across upgrades.
 
     whisper_raw = raw.get("whisper") or {}
     if not isinstance(whisper_raw, dict):
@@ -125,7 +104,6 @@ def load_session_config(path: str | Path) -> SessionConfig:
         question=str(raw["question"]).strip(),
         context=str(raw.get("context", "")).strip(),
         community_context=str(raw.get("community_context", "")).strip(),
-        participants=participants,
         language=str(raw.get("language", "auto")).strip() or "auto",
         facilitator_model=str(raw.get("facilitator_model", "claude-sonnet-4-5")),
         synthesis_model=str(raw.get("synthesis_model", "claude-sonnet-4-5")),

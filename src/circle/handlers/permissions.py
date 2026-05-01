@@ -50,7 +50,7 @@ def build_handlers(context: BotContext) -> list:
             logger.warning("bad permission callback data: %r", query.data)
             return
 
-        participant_id, display_name = resolve_telegram_identity(context, query.from_user)
+        participant_id, display_name = resolve_telegram_identity(query.from_user)
         await render_stream(
             permissions_controller.handle_permission_choice(
                 participant_id=participant_id,
@@ -74,7 +74,7 @@ def build_handlers(context: BotContext) -> list:
             logger.warning("bad addition callback data: %r", query.data)
             return
 
-        participant_id, display_name = resolve_telegram_identity(context, query.from_user)
+        participant_id, display_name = resolve_telegram_identity(query.from_user)
         await render_stream(
             permissions_controller.handle_addition_choice(
                 participant_id=participant_id,
@@ -102,7 +102,7 @@ def build_handlers(context: BotContext) -> list:
             logger.warning("bad addition perm callback: %r", query.data)
             return
 
-        participant_id, display_name = resolve_telegram_identity(context, query.from_user)
+        participant_id, display_name = resolve_telegram_identity(query.from_user)
         await render_stream(
             permissions_controller.handle_addition_permission(
                 participant_id=participant_id,

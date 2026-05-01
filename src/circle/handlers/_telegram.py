@@ -19,7 +19,6 @@ from telegram import (
 )
 from telegram.constants import ChatAction
 
-from ..runtime import BotContext
 from ..transport import (
     OutboundAction,
     ResolveChoice,
@@ -35,21 +34,20 @@ def _telegram_parse_mode(parse_mode: str) -> str | None:
     return "HTML" if parse_mode == "html" else None
 
 
-def resolve_telegram_identity(
-    context: BotContext, user
-) -> tuple[str, str]:
+def resolve_telegram_identity(user) -> tuple[str, str]:
     """Resolve a Telegram user object to (participant_id, display_name).
 
-    `participant_id` is the str-coerced Telegram user id (storage uses this
-    as the file key). `display_name` is the configured participant's
-    display name when registered, or the user's first name (or "friend")
-    as a fallback.
+    `participant_id` is the str-coerced Telegram user id (storage uses
+    this as the file key). `display_name` is the user's first name, or
+    "friend" if Telegram didn't surface one.
+
+    No registration check: the bot accepts any Telegram user who DMs it.
+    Two Telegram users with the same `first_name` are still distinct
+    participants (different ids) — they just both show up as that name in
+    the synthesis, which the facilitator can disambiguate manually if it
+    ever happens.
     """
-    participant = context.lookup_participant_by_username(user.username)
-    display_name = (
-        participant.display_name if participant else (user.first_name or "friend")
-    )
-    return str(user.id), display_name
+    return str(user.id), (user.first_name or "friend")
 
 
 async def render_action(

@@ -38,9 +38,7 @@ def build_handlers(context: BotContext) -> list:
         if update.effective_message.text is None:
             return
 
-        participant_id, display_name = resolve_telegram_identity(
-            context, update.effective_user
-        )
+        participant_id, display_name = resolve_telegram_identity(update.effective_user)
         await render_stream(
             conversation_controller.handle_message(
                 participant_id=participant_id,
@@ -81,7 +79,7 @@ def build_handlers(context: BotContext) -> list:
             await chat.send_message(VOICE_FAILED_MESSAGE)
             return
 
-        participant_id, display_name = resolve_telegram_identity(context, user)
+        participant_id, display_name = resolve_telegram_identity(user)
         await render_stream(
             conversation_controller.handle_message(
                 participant_id=participant_id,

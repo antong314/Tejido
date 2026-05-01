@@ -29,23 +29,14 @@ community_context: |
   principles. Without this the synthesis can feel generic. Leave empty if you
   don't have it yet.
 
-participants:
-  # Six entries by default — the prototype is built for groups of about six.
-  # `handle` is the Telegram @username (with or without the @).
-  # `display_name` is how the participant appears in syntheses and proposals
-  # (when their permission allows attribution).
-  - handle: "@example_handle_1"
-    display_name: "Participant One"
-  - handle: "@example_handle_2"
-    display_name: "Participant Two"
-  - handle: "@example_handle_3"
-    display_name: "Participant Three"
-  - handle: "@example_handle_4"
-    display_name: "Participant Four"
-  - handle: "@example_handle_5"
-    display_name: "Participant Five"
-  - handle: "@example_handle_6"
-    display_name: "Participant Six"
+# There is no `participants` list. Both surfaces accept any joiner:
+#   - Telegram: any user who DMs the bot can /start; their `first_name` is
+#     used as the display name in synthesis and proposals.
+#   - Web: visitors to the session URL enter their name. Names are unique
+#     per session — a second joiner picking a name already taken is asked
+#     for a different one.
+# The facilitator controls who joins by who they share the bot username /
+# session URL with.
 
 language: "auto"
 

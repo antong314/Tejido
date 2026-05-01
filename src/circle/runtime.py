@@ -2,10 +2,8 @@
 
 A single `BotContext` is constructed at startup and threaded into the
 controller (transport-neutral) and adapters (Telegram now, web later).
-The controller-facing methods (`lock_for`, `load_or_create`, `save`) are
-transport-neutral. The Telegram adapter additionally uses
-`is_registered` / `lookup_participant_by_username` to resolve a Telegram
-@username to a configured participant before invoking the controller.
+All methods are transport-neutral: an adapter resolves its transport
+identity to a `participant_id` + `display_name` before calling in.
 """
 
 from __future__ import annotations
@@ -15,9 +13,13 @@ import logging
 from dataclasses import dataclass
 
 from .anthropic_client import AnthropicClient
-from .config import AppConfig, Participant
+from .config import AppConfig
 from .state import ParticipantState, new_participant_state
-from .storage import load_participant, save_participant
+from .storage import (
+    load_participant,
+    register_in_index,
+    save_participant,
+)
 from .whisper_client import WhisperTranscriber
 
 logger = logging.getLogger(__name__)
@@ -35,9 +37,6 @@ class BotContext:
         # in-memory; keyed by the canonical str participant_id (whatever the
         # adapter resolved the transport identity to).
         self._user_locks: dict[str, asyncio.Lock] = {}
-        self._handle_to_participant: dict[str, Participant] = {
-            self._normalize_handle(p.handle): p for p in self.config.session.participants
-        }
 
     def lock_for(self, participant_id: str) -> asyncio.Lock:
         lock = self._user_locks.get(participant_id)
@@ -46,29 +45,19 @@ class BotContext:
             self._user_locks[participant_id] = lock
         return lock
 
-    @staticmethod
-    def _normalize_handle(handle: str) -> str:
-        return handle.lstrip("@").lower()
-
-    def lookup_participant_by_username(self, username: str | None) -> Participant | None:
-        """Telegram-specific: resolve an `@username` to a configured participant."""
-        if not username:
-            return None
-        return self._handle_to_participant.get(self._normalize_handle(username))
-
-    def is_registered(self, telegram_username: str | None) -> bool:
-        """Telegram-specific: is this username on the participant list?"""
-        return self.lookup_participant_by_username(telegram_username) is not None
-
     def load_or_create(
         self, participant_id: str, display_name: str
     ) -> ParticipantState:
         """Load existing state or create fresh state for a new participant.
 
-        `display_name` is used only on the create path. The adapter resolves
-        identity (Telegram username → participant entry) and supplies a real
-        display name when known, or a fallback (e.g. the user's first name)
-        when the participant isn't on the registered list.
+        `display_name` is used only on the create path. The adapter has
+        already resolved the transport identity to a stable participant_id
+        and chosen the display name (Telegram first_name, or the name the
+        user typed in the web join form).
+
+        On creation, also registers the participant in the session's
+        `_index.json` so the web join endpoint and the dashboard can list
+        joined participants without scanning every JSON.
         """
         raw = load_participant(self.config.data_dir, participant_id)
         if raw is not None:
@@ -81,6 +70,7 @@ class BotContext:
             question=self.config.session.question,
         )
         save_participant(self.config.data_dir, participant_id, state.to_dict())
+        register_in_index(self.config.data_dir, participant_id, display_name)
         return state
 
     def save(self, state: ParticipantState) -> None:

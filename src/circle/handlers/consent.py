@@ -29,16 +29,10 @@ def build_handlers(context: BotContext) -> list:
         user = update.effective_user
         chat = update.effective_chat
 
-        if not context.is_registered(user.username):
-            await chat.send_message(consent_controller.NOT_REGISTERED_MESSAGE)
-            logger.info(
-                "rejected /start from non-registered user id=%s username=%s",
-                user.id,
-                user.username,
-            )
-            return
-
-        participant_id, display_name = resolve_telegram_identity(context, user)
+        # No registration gate: any Telegram user who DMs the bot can /start.
+        # Their `first_name` becomes the display name; collisions are
+        # accepted (different telegram_user_ids = different participants).
+        participant_id, display_name = resolve_telegram_identity(user)
         await render_stream(
             consent_controller.handle_start(
                 participant_id=participant_id,
@@ -54,7 +48,7 @@ def build_handlers(context: BotContext) -> list:
             return
         await query.answer()
 
-        participant_id, display_name = resolve_telegram_identity(context, query.from_user)
+        participant_id, display_name = resolve_telegram_identity(query.from_user)
         await render_stream(
             consent_controller.handle_consent_callback(
                 participant_id=participant_id,

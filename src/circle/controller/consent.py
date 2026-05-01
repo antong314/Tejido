@@ -51,14 +51,6 @@ WELCOME_TEMPLATE = (
 READY_BUTTON_LABEL = "I'm ready, let's begin"
 
 
-# Surfaced for the adapter to send directly when an unknown user runs /start.
-NOT_REGISTERED_MESSAGE = (
-    "Hi — this bot is set up for a specific group session, and your Telegram "
-    "handle isn't on the participant list. If you think that's a mistake, "
-    "please reach out to the facilitator."
-)
-
-
 ALREADY_BEGUN_MESSAGE = (
     "You've already begun. Just keep going — send me a message and we'll pick "
     "up where we left off.\n\n"
