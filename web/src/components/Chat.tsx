@@ -3,6 +3,7 @@ import { fetchState, sendMessage, subscribeEvents, ApiError } from "../api";
 import { deriveInitialMessages } from "../derive_messages";
 import type { ChatMessage, ContentPart, Phase, ServerEvent } from "../types";
 import { ChoicePrompt } from "./ChoicePrompt";
+import { MicButton } from "./MicButton";
 
 interface Props {
   participantId: string;
@@ -240,6 +241,13 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
               }
             }}
             className="flex-1 resize-none rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500 disabled:bg-neutral-100 disabled:text-neutral-500"
+          />
+          <MicButton
+            participantId={participantId}
+            disabled={inputDisabled}
+            onTranscribed={() => {
+              /* Reply will arrive over SSE; nothing to do here. */
+            }}
           />
           <button
             type="submit"

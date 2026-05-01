@@ -4,9 +4,12 @@ PRD section 5.1 wants no audio leaving the laptop, and PRD section 4.2 lists
 voice transcription as a component the bot calls into. We use pywhispercpp so
 the only external API we depend on is Anthropic; transcription runs locally.
 
-Telegram voice notes arrive as `.ogg/Opus`. whisper.cpp wants 16 kHz mono PCM
-WAV, so we shell out to ffmpeg to convert before transcription. The model is
-loaded once at bot startup (loading is the expensive step) and reused.
+Telegram voice notes arrive as `.ogg/Opus`. Browser MediaRecorder produces
+`.webm/Opus` (Chrome, Firefox) or `.mp4/AAC` (Safari). whisper.cpp wants
+16 kHz mono PCM WAV, so we shell out to ffmpeg to convert before
+transcription — and ffmpeg handles all of those input formats with the same
+command. The model is loaded once at startup (loading is the expensive
+step) and reused.
 """
 
 from __future__ import annotations
@@ -59,17 +62,26 @@ class WhisperTranscriber:
         )
         self._n_threads = max(1, (os.cpu_count() or 4) - 1)
 
-    async def transcribe_ogg(self, ogg_path: Path) -> TranscriptionResult:
-        wav_path = ogg_path.with_suffix(".wav")
+    async def transcribe_audio(self, audio_path: Path) -> TranscriptionResult:
+        """Transcribe an audio file in any format ffmpeg understands.
+
+        Converts to 16 kHz mono PCM WAV (whisper.cpp's expected input)
+        before invoking the model. Both `audio_path` and the temporary
+        WAV are deleted afterward, even on failure.
+        """
+        wav_path = audio_path.with_suffix(".wav")
         try:
-            await asyncio.to_thread(self._convert_to_wav, ogg_path, wav_path)
+            await asyncio.to_thread(self._convert_to_wav, audio_path, wav_path)
             return await asyncio.to_thread(self._transcribe_sync, wav_path)
         finally:
-            for path in (ogg_path, wav_path):
+            for path in (audio_path, wav_path):
                 try:
                     path.unlink(missing_ok=True)
                 except OSError:
                     logger.warning("failed to clean up %s", path, exc_info=True)
+
+    # Backwards-compat alias for older callers.
+    transcribe_ogg = transcribe_audio
 
     @staticmethod
     def _convert_to_wav(ogg_path: Path, wav_path: Path) -> None:
@@ -123,7 +135,18 @@ class WhisperTranscriber:
         return TranscriptionResult(text=text, language=detected_lang)
 
 
-def make_temp_ogg() -> Path:
-    fd, name = tempfile.mkstemp(prefix="circle_voice_", suffix=".ogg")
+def make_temp_audio(suffix: str = ".ogg") -> Path:
+    """Create a temp file for an incoming audio blob.
+
+    Defaults to `.ogg` for the Telegram path (which always sends Opus
+    in an Ogg container). The web adapter passes the browser's actual
+    mime/extension when it can; ffmpeg sniffs the format anyway, but
+    a correct extension makes debugging easier.
+    """
+    fd, name = tempfile.mkstemp(prefix="tejido_voice_", suffix=suffix)
     os.close(fd)
     return Path(name)
+
+
+# Backwards-compat alias.
+make_temp_ogg = make_temp_audio

@@ -23,7 +23,13 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Path as PathParam
+from fastapi import (
+    FastAPI,
+    File,
+    HTTPException,
+    Path as PathParam,
+    UploadFile,
+)
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -41,6 +47,7 @@ from ..controller.identity import (
 )
 from ..runtime import BotContext
 from ..storage import load_participant
+from ..whisper_client import TranscriptionError, make_temp_audio
 from .dispatch import InvalidCallbackError, dispatch_callback
 from .render_action import action_to_json
 from .sse import SSEHub
@@ -290,6 +297,60 @@ def create_app(context: BotContext) -> FastAPI:
             await sse_hub.broadcast(participant_id, action_to_json(action))
         return AckResponse()
 
+    @app.post(
+        "/api/p/{participant_id}/audio",
+        response_model=AckResponse,
+        responses={
+            404: {"model": ErrorResponse},
+            422: {"model": ErrorResponse, "description": "Transcription failed"},
+        },
+    )
+    async def post_audio(
+        participant_id: Annotated[str, PathParam(pattern=_PARTICIPANT_ID_PATTERN)],
+        file: UploadFile = File(...),
+    ) -> AckResponse:
+        display_name = _require_participant(context, participant_id)
+
+        # Pick a sensible suffix from the upload's mime type; ffmpeg
+        # sniffs the actual format regardless, but a correct extension
+        # makes debugging easier.
+        suffix = _suffix_for_audio(file.filename, file.content_type)
+        audio_path = make_temp_audio(suffix=suffix)
+        try:
+            data = await file.read()
+            audio_path.write_bytes(data)
+        except Exception:
+            audio_path.unlink(missing_ok=True)
+            logger.exception("audio upload save failed")
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "audio_save_failed", "error": "Could not save the upload"},
+            )
+
+        try:
+            result = await context.whisper.transcribe_audio(audio_path)
+        except TranscriptionError as exc:
+            logger.warning("whisper transcription failed: %s", exc)
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "transcription_failed",
+                    "error": "Couldn't transcribe that audio. Try again or type instead.",
+                },
+            )
+
+        actions = conversation_controller.handle_message(
+            participant_id=participant_id,
+            display_name=display_name,
+            session=context,
+            text=result.text,
+            via="voice",
+            detected_language=result.language,
+        )
+        async for action in actions:
+            await sse_hub.broadcast(participant_id, action_to_json(action))
+        return AckResponse()
+
     @app.get("/api/p/{participant_id}/events")
     async def get_events(
         participant_id: Annotated[str, PathParam(pattern=_PARTICIPANT_ID_PATTERN)],
@@ -317,6 +378,25 @@ def create_app(context: BotContext) -> FastAPI:
         )
 
     return app
+
+
+def _suffix_for_audio(filename: str | None, content_type: str | None) -> str:
+    """Best-effort suffix for the temp file based on upload metadata."""
+    if filename and "." in filename:
+        ext = "." + filename.rsplit(".", 1)[1].lower()
+        if 1 < len(ext) <= 6 and ext.isascii():
+            return ext
+    if content_type:
+        ct = content_type.lower()
+        if "webm" in ct:
+            return ".webm"
+        if "mp4" in ct or "mp4a" in ct or "aac" in ct:
+            return ".m4a"
+        if "ogg" in ct or "opus" in ct:
+            return ".ogg"
+        if "wav" in ct:
+            return ".wav"
+    return ".audio"
 
 
 def _require_participant(context: BotContext, participant_id: str) -> str:
