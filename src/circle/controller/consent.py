@@ -16,7 +16,7 @@ from ..anthropic_client import (
     FACILITATOR_TEMPERATURE,
     ChatMessage,
 )
-from ..prompts import READY_TOKEN, render_facilitator_prompt
+from ..prompts import READY_TOKEN
 from ..runtime import BotContext
 from ..state import Phase, TranscriptTurn
 from ..transport import (
@@ -93,7 +93,7 @@ async def handle_start(
         if not already_begun:
             state.transition_to(Phase.AWAITING_CONSENT)
             session.save(state)
-        question = session.config.session.question
+        question = state.question
         name = state.participant_name
 
     if already_begun:
@@ -166,12 +166,9 @@ async def send_opening_turn(
         seed = ChatMessage(role="user", content="(I'm ready to begin.)")
         try:
             reply = await session.anthropic.complete(
-                system=render_facilitator_prompt(
-                    question=session.config.session.question,
-                    context=session.config.session.context,
-                ),
+                system=session.facilitator_system_prompt,
                 messages=[seed],
-                model=session.config.session.facilitator_model,
+                model=session.facilitator_model,
                 temperature=FACILITATOR_TEMPERATURE,
                 max_tokens=FACILITATOR_MAX_TOKENS,
             )

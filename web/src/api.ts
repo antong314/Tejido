@@ -1,4 +1,8 @@
 // Thin REST + SSE client for the FastAPI backend.
+//
+// All per-participant endpoints are scoped under a session id in the URL —
+// the backend is multi-session in one process and uses the session id from
+// the URL to pick the right BotContext.
 
 import type {
   ApiErrorBody,
@@ -42,17 +46,21 @@ export async function join(
   return r.json();
 }
 
-export async function fetchState(participantId: string): Promise<StateResponse> {
-  const r = await fetch(`/api/p/${participantId}/state`);
+export async function fetchState(
+  sessionId: string,
+  participantId: string,
+): Promise<StateResponse> {
+  const r = await fetch(`/api/s/${sessionId}/p/${participantId}/state`);
   if (!r.ok) throw await parseError(r);
   return r.json();
 }
 
 export async function sendMessage(
+  sessionId: string,
   participantId: string,
   text: string,
 ): Promise<void> {
-  const r = await fetch(`/api/p/${participantId}/message`, {
+  const r = await fetch(`/api/s/${sessionId}/p/${participantId}/message`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text }),
@@ -61,10 +69,11 @@ export async function sendMessage(
 }
 
 export async function sendCallback(
+  sessionId: string,
   participantId: string,
   callback_data: string,
 ): Promise<void> {
-  const r = await fetch(`/api/p/${participantId}/callback`, {
+  const r = await fetch(`/api/s/${sessionId}/p/${participantId}/callback`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ callback_data }),
@@ -75,11 +84,12 @@ export async function sendCallback(
 // EventSource subscription with auto-reconnect on transient failures.
 // Returns a disposer that closes the connection.
 export function subscribeEvents(
+  sessionId: string,
   participantId: string,
   onEvent: (event: ServerEvent) => void,
   onError?: (err: Event) => void,
 ): () => void {
-  const url = `/api/p/${participantId}/events`;
+  const url = `/api/s/${sessionId}/p/${participantId}/events`;
   const es = new EventSource(url);
 
   es.onmessage = (ev) => {
@@ -87,13 +97,11 @@ export function subscribeEvents(
       const data = JSON.parse(ev.data);
       onEvent(data as ServerEvent);
     } catch (e) {
-      // ignore malformed events
       console.warn("malformed SSE event:", ev.data, e);
     }
   };
   es.onerror = (err) => {
     if (onError) onError(err);
-    // EventSource auto-reconnects on transport errors.
   };
 
   return () => es.close();

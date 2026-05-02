@@ -25,7 +25,7 @@ from ..anthropic_client import (
     FACILITATOR_TEMPERATURE,
     ChatMessage,
 )
-from ..prompts import READY_TOKEN, render_facilitator_prompt
+from ..prompts import READY_TOKEN
 from ..runtime import BotContext
 from ..state import Phase, TranscriptTurn
 from ..transport import OutboundAction, SendText, TypingIndicator
@@ -127,12 +127,9 @@ async def handle_message(
         ]
         try:
             reply = await session.anthropic.complete(
-                system=render_facilitator_prompt(
-                    question=session.config.session.question,
-                    context=session.config.session.context,
-                ),
+                system=session.facilitator_system_prompt,
                 messages=history,
-                model=session.config.session.facilitator_model,
+                model=session.facilitator_model,
                 temperature=FACILITATOR_TEMPERATURE,
                 max_tokens=FACILITATOR_MAX_TOKENS,
             )

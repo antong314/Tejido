@@ -2,6 +2,7 @@
 data/
 syntheses/
 proposals/
+revisions/
 models/
 __pycache__/
 *.pyc
@@ -10,8 +11,7 @@ venv/
 .pytest_cache/
 .DS_Store
 
-# Session configs contain real participant Telegram handles and may reference
-# community-specific context. Treat them as private. The example template
-# below is the only one tracked.
-config/session_*.yaml
-!config/session_config.example.yaml
+# Session JSON configs (config/sessions/*.json) ARE tracked in git going
+# forward — they're managed via the admin UI and the user has chosen to
+# version them. If a particular session contains community-sensitive
+# content, gitignore it explicitly here.

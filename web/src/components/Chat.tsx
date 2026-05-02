@@ -6,6 +6,7 @@ import { ChoicePrompt } from "./ChoicePrompt";
 import { MicButton } from "./MicButton";
 
 interface Props {
+  sessionId: string;
   participantId: string;
   displayName: string;
   onResetIdentity: () => void;
@@ -14,7 +15,7 @@ interface Props {
 let _eventCounter = 0;
 const nextMsgId = () => `evt-${++_eventCounter}`;
 
-export function Chat({ participantId, displayName, onResetIdentity }: Props) {
+export function Chat({ sessionId, participantId, displayName, onResetIdentity }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [phase, setPhase] = useState<Phase>("not_started");
   const [typing, setTyping] = useState(false);
@@ -30,7 +31,7 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
     let cancelled = false;
     (async () => {
       try {
-        const s = await fetchState(participantId);
+        const s = await fetchState(sessionId, participantId);
         if (cancelled) return;
         setMessages(deriveInitialMessages(s));
         setPhase(s.phase);
@@ -53,16 +54,16 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [participantId, onResetIdentity]);
+  }, [sessionId, participantId, onResetIdentity]);
 
   // Subscribe to SSE.
   useEffect(() => {
     if (!bootstrapped) return;
-    const dispose = subscribeEvents(participantId, (event) => {
+    const dispose = subscribeEvents(sessionId, participantId, (event) => {
       applyEvent(event);
     });
     return dispose;
-  }, [participantId, bootstrapped]);
+  }, [sessionId, participantId, bootstrapped]);
 
   function applyEvent(event: ServerEvent) {
     if (event.type === "typing") {
@@ -172,7 +173,7 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
     ]);
 
     try {
-      await sendMessage(participantId, text);
+      await sendMessage(sessionId, participantId, text);
     } catch (e) {
       setError(
         e instanceof ApiError ? e.message : "Couldn't send your message.",
@@ -236,6 +237,7 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
             <MessageBubble
               key={m.id}
               message={m}
+              sessionId={sessionId}
               participantId={participantId}
             />
           ))}
@@ -270,6 +272,7 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
             className="flex-1 resize-none rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500 disabled:bg-neutral-100 disabled:text-neutral-500"
           />
           <MicButton
+            sessionId={sessionId}
             participantId={participantId}
             disabled={inputDisabled}
             onTranscribed={() => {
@@ -296,9 +299,11 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
 
 function MessageBubble({
   message,
+  sessionId,
   participantId,
 }: {
   message: ChatMessage;
+  sessionId: string;
   participantId: string;
 }) {
   const isUser = message.role === "user";
@@ -331,6 +336,7 @@ function MessageBubble({
             return (
               <ChoicePrompt
                 key={i}
+                sessionId={sessionId}
                 participantId={participantId}
                 text={part.text}
                 parseMode={part.parse_mode}

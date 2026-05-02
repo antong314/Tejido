@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
 
 interface Props {
+  sessionId: string;
   participantId: string;
   disabled: boolean;
   onTranscribed: () => void;
@@ -13,7 +14,7 @@ interface Props {
 
 type Status = "idle" | "asking" | "recording" | "uploading" | "error";
 
-export function MicButton({ participantId, disabled, onTranscribed }: Props) {
+export function MicButton({ sessionId, participantId, disabled, onTranscribed }: Props) {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -99,7 +100,7 @@ export function MicButton({ participantId, disabled, onTranscribed }: Props) {
     fd.append("file", blob, `recording.${ext}`);
 
     try {
-      const r = await fetch(`/api/p/${participantId}/audio`, {
+      const r = await fetch(`/api/s/${sessionId}/p/${participantId}/audio`, {
         method: "POST",
         body: fd,
       });

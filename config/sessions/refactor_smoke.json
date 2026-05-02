@@ -1,0 +1,21 @@
+{
+  "id": "refactor_smoke",
+  "title": "Refactor Smoke",
+  "workflow_type": "open_discussion",
+  "created_at": "2026-05-01T19:21:37.038864+00:00",
+  "common": {
+    "facilitator_model": "claude-sonnet-4-5",
+    "synthesis_model": "claude-sonnet-4-5",
+    "language": "auto",
+    "expected_duration_minutes": 10,
+    "ai_persona": ""
+  },
+  "whisper": {
+    "model": "medium",
+    "models_dir": "models/"
+  },
+  "workflow_data": {
+    "question": "What's one tradition or ritual — from anywhere in your life — that you'd want\nmore of in the communities you're part of, and what is it about that practice\nthat makes it valuable to you?",
+    "context": "This is a smoke test for the controller/adapter refactor. Keep the\nconversation short — the goal is just to exercise the full flow: opening\nturn, a couple of conversational turns (text and voice), the\n[READY_FOR_PERMISSIONS] transition, the per-point permissions walk-through,\nthe addition prompt (try both yes and no paths across runs), and final\ncompletion."
+  }
+}

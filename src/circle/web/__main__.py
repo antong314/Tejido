@@ -1,9 +1,11 @@
-"""Standalone web entry point — runs FastAPI alone for development.
+"""Standalone web entrypoint — multi-session FastAPI, no Telegram.
 
-The combined Telegram + web entry point lands in a later commit. For now,
-this lets us smoke-test the join / state endpoints in isolation:
+Loads the SessionRegistry over `config/sessions/` so all sessions are
+available immediately. Use `circle.run` if you want Telegram alongside.
 
-    python -m circle.web --config config/session_smoke.yaml --port 8000
+Usage:
+    python -m circle.web --port 8000
+    python -m circle.web --no-ffmpeg-check --port 8000
 """
 
 from __future__ import annotations
@@ -14,9 +16,8 @@ import sys
 
 import uvicorn
 
-from ..anthropic_client import AnthropicClient
 from ..config import ConfigError, load_app_config
-from ..runtime import BotContext
+from ..registry import SessionRegistry
 from ..whisper_client import WhisperTranscriber
 from .app import create_app
 
@@ -25,28 +26,16 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run the Tejido web adapter (FastAPI) standalone."
+        description="Run the Tejido web adapter (multi-session, no Telegram)."
     )
     parser.add_argument(
-        "--config",
-        default="config/session_config.yaml",
-        help="Path to the session config YAML.",
+        "--host", default="127.0.0.1", help="Host interface to bind."
     )
-    parser.add_argument(
-        "--host",
-        default="127.0.0.1",
-        help="Host interface to bind (default loopback only).",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=8000,
-        help="TCP port to listen on.",
-    )
+    parser.add_argument("--port", type=int, default=8000, help="TCP port.")
     parser.add_argument(
         "--no-ffmpeg-check",
         action="store_true",
-        help="Skip the ffmpeg-on-PATH validation (web-only sessions don't need it).",
+        help="Skip the ffmpeg check (web-only sessions don't need it).",
     )
     args = parser.parse_args()
 
@@ -57,27 +46,27 @@ def main() -> None:
     )
 
     try:
-        app_config = load_app_config(args.config, require_ffmpeg=not args.no_ffmpeg_check)
+        app_config = load_app_config(require_ffmpeg=not args.no_ffmpeg_check)
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         sys.exit(2)
 
-    anthropic = AnthropicClient(
-        api_key=app_config.secrets.anthropic_api_key,
-        default_model=app_config.session.facilitator_model,
-    )
+    # Whisper is shared across every session in this process. It's loaded
+    # eagerly so first-audio-request latency is just the transcription
+    # itself, not the model load. Reasonable for the prototype; could
+    # become lazy if startup time matters more than first-call latency.
     whisper = WhisperTranscriber(
-        model_name=app_config.session.whisper.model,
-        models_dir=app_config.session.whisper.models_dir,
+        model_name="medium",
+        models_dir="models/",
     )
-    context = BotContext(config=app_config, anthropic=anthropic, whisper=whisper)
-    app = create_app(context)
+    registry = SessionRegistry(app_config=app_config, whisper=whisper)
+    app = create_app(registry=registry)
 
     logger.info(
-        "tejido web starting host=%s port=%s session=%s",
+        "tejido web starting host=%s port=%s sessions=%s",
         args.host,
         args.port,
-        app_config.session.session_id,
+        registry.list_session_ids(),
     )
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 

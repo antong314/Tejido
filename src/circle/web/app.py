@@ -1,18 +1,30 @@
 """FastAPI app for the web adapter.
 
-Routes:
-  GET  /                                — redirects to the session URL
-  GET  /s/{session_id}                  — serves the React app (or, if
-                                           web/dist isn't built yet, a
-                                           minimal placeholder)
-  POST /api/s/{session_id}/join         — claim a name, get a participant_id
-  GET  /api/p/{participant_id}/state    — current JSON state for the
-                                           frontend to bootstrap from
-  POST /api/p/{participant_id}/message  — submit free-text input
-  POST /api/p/{participant_id}/callback — submit a button choice or command
-  GET  /api/p/{participant_id}/events   — SSE stream of OutboundActions
+Now multi-session: every per-participant route is scoped under a session
+id in the URL path. The frontend has the session id from /s/<id> and
+keeps the participant_id in localStorage; combined, the URLs are
+self-describing and don't need a global participant→session lookup
+table on the backend.
 
-Later commits add /audio.
+Routes:
+  GET  /                                            — root: redirects to
+                                                       the first known
+                                                       session, or the
+                                                       admin index
+  GET  /s/{session_id}                              — serves the React
+                                                       app (or a fallback
+                                                       placeholder)
+
+  POST /api/s/{session_id}/join                     — claim a name → pid
+
+  GET  /api/s/{session_id}/p/{participant_id}/state
+  POST /api/s/{session_id}/p/{participant_id}/message
+  POST /api/s/{session_id}/p/{participant_id}/callback
+  POST /api/s/{session_id}/p/{participant_id}/audio
+  GET  /api/s/{session_id}/p/{participant_id}/events  (SSE)
+
+Admin REST endpoints live in `circle.web.admin` and are mounted by
+`create_app`.
 """
 
 from __future__ import annotations
@@ -45,24 +57,28 @@ from ..controller.identity import (
     NameTakenError,
     claim_name,
 )
+from ..registry import SessionRegistry
 from ..runtime import BotContext
 from ..state import Phase
 from ..storage import load_participant
 from ..whisper_client import TranscriptionError, make_temp_audio
+from ..workflows import get_workflow_ui
 from .dispatch import InvalidCallbackError, dispatch_callback
 from .render_action import action_to_json
 from .sse import SSEHub
 
 
-# Built React app lives at <repo_root>/web/dist. Resolved relative to the
-# package install location: src/circle/web/app.py → ../../../web/dist.
+# Built React app lives at <repo_root>/web/dist.
 _FRONTEND_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 logger = logging.getLogger(__name__)
 
-
 _SESSION_ID_PATTERN = r"^[a-zA-Z0-9_-]+$"
 _PARTICIPANT_ID_PATTERN = r"^[a-zA-Z0-9_-]+$"
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models for request / response bodies.
 
 
 class JoinRequest(BaseModel):
@@ -86,10 +102,13 @@ class StateResponse(BaseModel):
     status: str
     started_at: str | None
     completed_at: str | None
+    # Workflow-aware additions for the frontend's per-workflow UI.
+    workflow_type: str
+    workflow_ui: dict
 
 
 class MessageRequest(BaseModel):
-    text: str = Field(..., description="Free-text input from the participant.")
+    text: str
 
 
 class CallbackRequest(BaseModel):
@@ -103,9 +122,7 @@ class CallbackRequest(BaseModel):
 
 
 class AckResponse(BaseModel):
-    """Returned by /message and /callback once the controller has fully
-    drained. Real-time output flows over the SSE stream — this is just an
-    acknowledgement."""
+    """Returned by /message and /callback once the controller drains."""
 
     status: str = "ok"
 
@@ -115,9 +132,14 @@ class ErrorResponse(BaseModel):
     error: str
 
 
-def _ensure_session_match(context: BotContext, session_id: str) -> None:
-    """Multi-session is out of scope for now — reject mismatched session IDs."""
-    if session_id != context.config.session.session_id:
+# ---------------------------------------------------------------------------
+
+
+async def _require_context(
+    registry: SessionRegistry, session_id: str
+) -> BotContext:
+    ctx = await registry.get(session_id)
+    if ctx is None:
         raise HTTPException(
             status_code=404,
             detail={
@@ -125,49 +147,127 @@ def _ensure_session_match(context: BotContext, session_id: str) -> None:
                 "error": f"Unknown session {session_id!r}",
             },
         )
+    return ctx
 
 
-def create_app(context: BotContext) -> FastAPI:
-    """Build a FastAPI app bound to the given runtime context.
+def _require_participant(context: BotContext, participant_id: str) -> str:
+    """Return the participant's display_name, or raise 404."""
+    raw = load_participant(context.data_dir, participant_id)
+    if raw is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "participant_not_found",
+                "error": "No participant with that id in this session",
+            },
+        )
+    return str(raw.get("participant_name", ""))
 
-    The app holds a reference to the BotContext via closure; routes use it
-    to validate the session, claim names, and load participant state.
-    The SSEHub is owned by the app and lives for the process lifetime.
+
+async def _broadcast_phase(
+    context: BotContext, sse_hub: SSEHub, participant_id: str
+) -> None:
+    raw = load_participant(context.data_dir, participant_id)
+    if raw is None:
+        return
+    phase = raw.get("phase", "")
+    await sse_hub.broadcast(
+        participant_id, {"type": "phase_update", "phase": phase}
+    )
+
+
+def _suffix_for_audio(filename: str | None, content_type: str | None) -> str:
+    if filename and "." in filename:
+        ext = "." + filename.rsplit(".", 1)[1].lower()
+        if 1 < len(ext) <= 6 and ext.isascii():
+            return ext
+    if content_type:
+        ct = content_type.lower()
+        if "webm" in ct:
+            return ".webm"
+        if "mp4" in ct or "mp4a" in ct or "aac" in ct:
+            return ".m4a"
+        if "ogg" in ct or "opus" in ct:
+            return ".ogg"
+        if "wav" in ct:
+            return ".wav"
+    return ".audio"
+
+
+def _state_for_response(raw: dict, context: BotContext) -> dict:
+    """Pick a stable subset of the on-disk JSON, plus workflow UI hints."""
+    return {
+        "participant_id": str(raw.get("participant_id", "")),
+        "participant_name": str(raw.get("participant_name", "")),
+        "session_id": str(raw.get("session_id", "")),
+        "question": str(raw.get("question", "")),
+        "phase": str(raw.get("phase", "")),
+        "transcript": list(raw.get("transcript", [])),
+        "extracted_points": list(raw.get("extracted_points", [])),
+        "additions": list(raw.get("additions", [])),
+        "status": str(raw.get("status", "")),
+        "started_at": raw.get("started_at"),
+        "completed_at": raw.get("completed_at"),
+        "workflow_type": context.session.workflow_type,
+        "workflow_ui": get_workflow_ui(context.session),
+    }
+
+
+# ---------------------------------------------------------------------------
+# App factory.
+
+
+def create_app(*, registry: SessionRegistry) -> FastAPI:
+    """Build a FastAPI app bound to a SessionRegistry.
+
+    The registry is the source of per-session BotContexts; routes look up
+    by session id from the URL. The SSEHub is owned by the app and
+    lives for the process lifetime.
     """
     app = FastAPI(
         title="Tejido — Web Adapter",
         description=(
-            "AI-facilitated group deliberation. Web entry point for "
-            "participants. The Telegram adapter shares the same backend."
+            "AI-facilitated group deliberation. Multi-session web entry "
+            "point for participants. The Telegram adapter shares the "
+            "same backend (single-session at a time)."
         ),
     )
     sse_hub = SSEHub()
-    # Expose the hub for tests / introspection (not part of the HTTP API).
     app.state.sse_hub = sse_hub
-    app.state.context = context
+    app.state.registry = registry
+
+    # ------------------------------------------------------------------ root
 
     @app.get("/", include_in_schema=False)
     async def root() -> RedirectResponse:
-        return RedirectResponse(
-            url=f"/s/{context.config.session.session_id}",
-            status_code=307,
+        ids = registry.list_session_ids()
+        if ids:
+            return RedirectResponse(url=f"/s/{ids[0]}", status_code=307)
+        return RedirectResponse(url="/admin", status_code=307)
+
+    @app.get("/admin", include_in_schema=False)
+    async def admin_root() -> HTMLResponse:
+        # The React app handles /admin routing client-side.
+        index_path = _FRONTEND_DIST / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+        return HTMLResponse(
+            "<h1>Tejido admin</h1>"
+            "<p>The React frontend hasn't been built yet. "
+            "Run <code>cd web &amp;&amp; npm run build</code>.</p>"
         )
 
     @app.get("/s/{session_id}", include_in_schema=False)
     async def session_page(
         session_id: Annotated[str, PathParam(pattern=_SESSION_ID_PATTERN)],
     ):
-        _ensure_session_match(context, session_id)
-        # Prefer the built React app; fall back to the minimal placeholder
-        # if `web/dist` doesn't exist yet (useful for backend-only dev).
+        # 404 the page if the session config doesn't exist on disk.
+        await _require_context(registry, session_id)
         index_path = _FRONTEND_DIST / "index.html"
         if index_path.exists():
             return FileResponse(index_path)
         return HTMLResponse(_PLACEHOLDER_HTML.replace("{{SESSION_ID}}", session_id))
 
-    # Serve the React app's static assets (JS, CSS, images) under /assets/*.
-    # Mounted only when the build output exists; in API-only dev the paths
-    # 404 cleanly so it's obvious you need to `npm run build`.
     if _FRONTEND_DIST.exists() and (_FRONTEND_DIST / "assets").exists():
         app.mount(
             "/assets",
@@ -175,25 +275,24 @@ def create_app(context: BotContext) -> FastAPI:
             name="frontend_assets",
         )
 
+    # ------------------------------------------------------------------ join
+
     @app.post(
         "/api/s/{session_id}/join",
         response_model=JoinResponse,
         responses={
-            400: {"model": ErrorResponse, "description": "Invalid name"},
-            404: {"model": ErrorResponse, "description": "Session not found"},
-            409: {"model": ErrorResponse, "description": "Name already taken"},
+            400: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
         },
     )
     async def join(
         session_id: Annotated[str, PathParam(pattern=_SESSION_ID_PATTERN)],
         body: JoinRequest,
     ) -> JoinResponse:
-        _ensure_session_match(context, session_id)
-
+        context = await _require_context(registry, session_id)
         try:
-            participant_id, display_name = claim_name(
-                context.config.data_dir, body.name
-            )
+            participant_id, display_name = claim_name(context.data_dir, body.name)
         except InvalidNameError as exc:
             raise HTTPException(
                 status_code=400,
@@ -205,12 +304,6 @@ def create_app(context: BotContext) -> FastAPI:
                 detail={"code": "name_taken", "error": str(exc)},
             )
 
-        # Materialize the participant: writes the JSON file and registers
-        # the entry in _index.json. Then immediately transition them past
-        # NOT_STARTED → AWAITING_CONSENT so the frontend can render the
-        # welcome card (the Telegram surface gets this transition for
-        # free via /start; the web surface needs it on /join because
-        # there's no separate "start" action).
         async with context.lock_for(participant_id):
             state = context.load_or_create(participant_id, display_name)
             if state.phase == Phase.NOT_STARTED:
@@ -227,15 +320,19 @@ def create_app(context: BotContext) -> FastAPI:
             participant_id=participant_id, display_name=display_name
         )
 
+    # ------------------------------------------------------------------ state
+
     @app.get(
-        "/api/p/{participant_id}/state",
+        "/api/s/{session_id}/p/{participant_id}/state",
         response_model=StateResponse,
         responses={404: {"model": ErrorResponse}},
     )
     async def get_state(
+        session_id: Annotated[str, PathParam(pattern=_SESSION_ID_PATTERN)],
         participant_id: Annotated[str, PathParam(pattern=_PARTICIPANT_ID_PATTERN)],
     ) -> StateResponse:
-        raw = load_participant(context.config.data_dir, participant_id)
+        context = await _require_context(registry, session_id)
+        raw = load_participant(context.data_dir, participant_id)
         if raw is None:
             raise HTTPException(
                 status_code=404,
@@ -244,23 +341,23 @@ def create_app(context: BotContext) -> FastAPI:
                     "error": "No participant with that id in this session",
                 },
             )
-        return StateResponse(**_state_for_response(raw))
+        return StateResponse(**_state_for_response(raw, context))
+
+    # ------------------------------------------------------------------ message
 
     @app.post(
-        "/api/p/{participant_id}/message",
+        "/api/s/{session_id}/p/{participant_id}/message",
         response_model=AckResponse,
         responses={404: {"model": ErrorResponse}},
     )
     async def post_message(
+        session_id: Annotated[str, PathParam(pattern=_SESSION_ID_PATTERN)],
         participant_id: Annotated[str, PathParam(pattern=_PARTICIPANT_ID_PATTERN)],
         body: MessageRequest,
     ) -> AckResponse:
+        context = await _require_context(registry, session_id)
         display_name = _require_participant(context, participant_id)
 
-        # Iterate the controller's async generator, broadcasting each
-        # OutboundAction as an SSE event. The controller may take several
-        # seconds (LLM call); the POST blocks until it completes, but the
-        # frontend has been receiving events live during that wait.
         actions = conversation_controller.handle_message(
             participant_id=participant_id,
             display_name=display_name,
@@ -274,18 +371,19 @@ def create_app(context: BotContext) -> FastAPI:
         await _broadcast_phase(context, sse_hub, participant_id)
         return AckResponse()
 
+    # ------------------------------------------------------------------ callback
+
     @app.post(
-        "/api/p/{participant_id}/callback",
+        "/api/s/{session_id}/p/{participant_id}/callback",
         response_model=AckResponse,
-        responses={
-            400: {"model": ErrorResponse},
-            404: {"model": ErrorResponse},
-        },
+        responses={400: {"model": ErrorResponse}, 404: {"model": ErrorResponse}},
     )
     async def post_callback(
+        session_id: Annotated[str, PathParam(pattern=_SESSION_ID_PATTERN)],
         participant_id: Annotated[str, PathParam(pattern=_PARTICIPANT_ID_PATTERN)],
         body: CallbackRequest,
     ) -> AckResponse:
+        context = await _require_context(registry, session_id)
         display_name = _require_participant(context, participant_id)
 
         try:
@@ -306,23 +404,25 @@ def create_app(context: BotContext) -> FastAPI:
         await _broadcast_phase(context, sse_hub, participant_id)
         return AckResponse()
 
+    # ------------------------------------------------------------------ audio
+
     @app.post(
-        "/api/p/{participant_id}/audio",
+        "/api/s/{session_id}/p/{participant_id}/audio",
         response_model=AckResponse,
         responses={
+            400: {"model": ErrorResponse},
             404: {"model": ErrorResponse},
-            422: {"model": ErrorResponse, "description": "Transcription failed"},
+            422: {"model": ErrorResponse},
         },
     )
     async def post_audio(
+        session_id: Annotated[str, PathParam(pattern=_SESSION_ID_PATTERN)],
         participant_id: Annotated[str, PathParam(pattern=_PARTICIPANT_ID_PATTERN)],
         file: UploadFile = File(...),
     ) -> AckResponse:
+        context = await _require_context(registry, session_id)
         display_name = _require_participant(context, participant_id)
 
-        # Pick a sensible suffix from the upload's mime type; ffmpeg
-        # sniffs the actual format regardless, but a correct extension
-        # makes debugging easier.
         suffix = _suffix_for_audio(file.filename, file.content_type)
         audio_path = make_temp_audio(suffix=suffix)
         try:
@@ -333,7 +433,10 @@ def create_app(context: BotContext) -> FastAPI:
             logger.exception("audio upload save failed")
             raise HTTPException(
                 status_code=400,
-                detail={"code": "audio_save_failed", "error": "Could not save the upload"},
+                detail={
+                    "code": "audio_save_failed",
+                    "error": "Could not save the upload",
+                },
             )
 
         try:
@@ -348,11 +451,6 @@ def create_app(context: BotContext) -> FastAPI:
                 },
             )
 
-        # Echo the transcribed text back as a user_message event so the
-        # participant sees their own bubble alongside the AI's reply.
-        # The text path optimistically renders the user bubble in the
-        # frontend; the voice path can't, because the frontend doesn't
-        # know what was said until Whisper returns.
         await sse_hub.broadcast(
             participant_id,
             {"type": "user_message", "text": result.text, "via": "voice"},
@@ -371,17 +469,18 @@ def create_app(context: BotContext) -> FastAPI:
         await _broadcast_phase(context, sse_hub, participant_id)
         return AckResponse()
 
-    @app.get("/api/p/{participant_id}/events")
+    # ------------------------------------------------------------------ events
+
+    @app.get("/api/s/{session_id}/p/{participant_id}/events")
     async def get_events(
+        session_id: Annotated[str, PathParam(pattern=_SESSION_ID_PATTERN)],
         participant_id: Annotated[str, PathParam(pattern=_PARTICIPANT_ID_PATTERN)],
     ) -> StreamingResponse:
-        # 404 a non-existent participant up front so the frontend doesn't
-        # silently subscribe to events that will never arrive.
+        context = await _require_context(registry, session_id)
         _require_participant(context, participant_id)
 
         async def event_stream() -> AsyncIterator[bytes]:
             async with sse_hub.subscribe(participant_id) as queue:
-                # Initial readiness ping so the client knows the stream is open.
                 yield b"event: ready\ndata: {}\n\n"
                 while True:
                     event = await queue.get()
@@ -391,93 +490,24 @@ def create_app(context: BotContext) -> FastAPI:
             event_stream(),
             media_type="text/event-stream",
             headers={
-                # Disable proxy buffering so events flush in real time.
                 "Cache-Control": "no-cache",
                 "X-Accel-Buffering": "no",
             },
         )
 
+    # Admin REST endpoints get mounted here. Imported lazily to keep
+    # `circle.web.app` importable without `circle.web.admin` (handy in
+    # tests that only exercise the participant-facing routes).
+    from . import admin as _admin
+
+    _admin.mount(app, registry=registry)
+
     return app
 
 
-async def _broadcast_phase(
-    context: BotContext, sse_hub: SSEHub, participant_id: str
-) -> None:
-    """Emit a `phase_update` SSE event with the participant's current phase.
-
-    Called after every controller drain (post_message, post_callback,
-    post_audio). The frontend listens for this so its input-enabled
-    state stays in sync with the state machine — without it, the
-    consent-button tap leaves the textarea disabled forever.
-    """
-    raw = load_participant(context.config.data_dir, participant_id)
-    if raw is None:
-        return
-    phase = raw.get("phase", "")
-    await sse_hub.broadcast(
-        participant_id, {"type": "phase_update", "phase": phase}
-    )
-
-
-def _suffix_for_audio(filename: str | None, content_type: str | None) -> str:
-    """Best-effort suffix for the temp file based on upload metadata."""
-    if filename and "." in filename:
-        ext = "." + filename.rsplit(".", 1)[1].lower()
-        if 1 < len(ext) <= 6 and ext.isascii():
-            return ext
-    if content_type:
-        ct = content_type.lower()
-        if "webm" in ct:
-            return ".webm"
-        if "mp4" in ct or "mp4a" in ct or "aac" in ct:
-            return ".m4a"
-        if "ogg" in ct or "opus" in ct:
-            return ".ogg"
-        if "wav" in ct:
-            return ".wav"
-    return ".audio"
-
-
-def _require_participant(context: BotContext, participant_id: str) -> str:
-    """Return the participant's display_name, or raise 404."""
-    raw = load_participant(context.config.data_dir, participant_id)
-    if raw is None:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "participant_not_found",
-                "error": "No participant with that id in this session",
-            },
-        )
-    return str(raw.get("participant_name", ""))
-
-
-def _state_for_response(raw: dict) -> dict:
-    """Pick a stable subset of the on-disk JSON for the state endpoint.
-
-    Keeps the response shape independent of internal-only fields like
-    `phase_entered_at` and `current_point_index` so the frontend never
-    accidentally relies on them.
-    """
-    return {
-        "participant_id": str(raw.get("participant_id", "")),
-        "participant_name": str(raw.get("participant_name", "")),
-        "session_id": str(raw.get("session_id", "")),
-        "question": str(raw.get("question", "")),
-        "phase": str(raw.get("phase", "")),
-        "transcript": list(raw.get("transcript", [])),
-        "extracted_points": list(raw.get("extracted_points", [])),
-        "additions": list(raw.get("additions", [])),
-        "status": str(raw.get("status", "")),
-        "started_at": raw.get("started_at"),
-        "completed_at": raw.get("completed_at"),
-    }
-
-
 # ---------------------------------------------------------------------------
-# Placeholder HTML — used for manual smoke testing until the React frontend
-# lands in commit 4. Vanilla HTML/JS, ~50 lines. Wired to /join so you can
-# exercise the backend in a browser without curl.
+# Placeholder HTML for the case when web/dist isn't built yet. Lets curl
+# verify the backend works end-to-end without a Vite build.
 
 _PLACEHOLDER_HTML = """\
 <!doctype html>
@@ -496,7 +526,6 @@ _PLACEHOLDER_HTML = """\
     button { margin-top: 1em; padding: 0.6em 1.2em; font-size: 1em;
              background: #222; color: white; border: 0; border-radius: 4px;
              cursor: pointer; }
-    button:hover { background: #444; }
     .error { color: #b00020; margin-top: 0.5em; min-height: 1.2em; }
     .ok    { color: #006400; margin-top: 0.5em; }
     pre    { background: #f4f4f4; padding: 1em; border-radius: 4px;
@@ -505,8 +534,7 @@ _PLACEHOLDER_HTML = """\
 </head>
 <body>
   <h1>Tejido — session {{SESSION_ID}}</h1>
-  <p>This is a smoke-test placeholder. The real chat UI ships in a later commit.</p>
-
+  <p>Frontend not built. <code>cd web &amp;&amp; npm run build</code>.</p>
   <form id="join-form">
     <label for="name">What should we call you?</label>
     <input id="name" type="text" autocomplete="off" required />
@@ -514,35 +542,24 @@ _PLACEHOLDER_HTML = """\
     <div class="error" id="error"></div>
     <div class="ok"    id="ok"></div>
   </form>
-
   <pre id="state" hidden></pre>
-
   <script>
     const SESSION_ID = "{{SESSION_ID}}";
-
     document.getElementById("join-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const name = document.getElementById("name").value;
       const err = document.getElementById("error");
       const ok  = document.getElementById("ok");
-      err.textContent = "";
-      ok.textContent  = "";
-
+      err.textContent = ""; ok.textContent = "";
       const r = await fetch(`/api/s/${SESSION_ID}/join`, {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({name}),
       });
       const data = await r.json();
-      if (!r.ok) {
-        err.textContent = (data.detail && data.detail.error) || "Join failed.";
-        return;
-      }
-
-      localStorage.setItem(`tejido:${SESSION_ID}:participant_id`, data.participant_id);
+      if (!r.ok) { err.textContent = (data.detail && data.detail.error) || "Join failed."; return; }
       ok.textContent = `Joined as ${data.display_name} (id ${data.participant_id})`;
-
-      const s = await fetch(`/api/p/${data.participant_id}/state`).then(r => r.json());
+      const s = await fetch(`/api/s/${SESSION_ID}/p/${data.participant_id}/state`).then(r => r.json());
       const pre = document.getElementById("state");
       pre.hidden = false;
       pre.textContent = JSON.stringify(s, null, 2);

@@ -35,17 +35,20 @@ from .anthropic_client import (
 )
 from .config import AppConfig, ConfigError, load_app_config
 from .prompts import render_proposal_prompt
+from .session import Session, load_session
 from .synthesis import assemble_transcripts_block, collect_completed
+from .workflows import get_community_context, get_synthesis_question
 
 logger = logging.getLogger(__name__)
 
 
-async def run_proposal(app_config: AppConfig) -> Path:
-    participants = collect_completed(app_config)
+async def run_proposal(session: Session, app_config: AppConfig) -> Path:
+    data_dir = app_config.data_dir_for(session.id)
+    participants = collect_completed(data_dir)
     if not participants:
         raise RuntimeError(
             "No completed participants with shareable content found in "
-            f"{app_config.data_dir}"
+            f"{data_dir}"
         )
     if len(participants) < 2:
         logger.warning(
@@ -55,17 +58,17 @@ async def run_proposal(app_config: AppConfig) -> Path:
 
     transcripts_block = assemble_transcripts_block(participants)
     prompt = render_proposal_prompt(
-        question=app_config.session.question,
+        question=get_synthesis_question(session),
         transcripts=transcripts_block,
-        community_context=app_config.session.community_context,
+        community_context=get_community_context(session),
     )
 
     anthropic = AnthropicClient(
         api_key=app_config.secrets.anthropic_api_key,
-        default_model=app_config.session.synthesis_model,
+        default_model=session.common.synthesis_model,
     )
 
-    logger.info("calling proposal model=%s", app_config.session.synthesis_model)
+    logger.info("calling proposal model=%s", session.common.synthesis_model)
     output = await anthropic.complete(
         system=prompt,
         messages=[
@@ -77,24 +80,25 @@ async def run_proposal(app_config: AppConfig) -> Path:
                 ),
             )
         ],
-        model=app_config.session.synthesis_model,
+        model=session.common.synthesis_model,
         temperature=PROPOSAL_TEMPERATURE,
         max_tokens=PROPOSAL_MAX_TOKENS,
     )
 
     today = datetime.now().strftime("%Y%m%d")
-    out_path = app_config.proposals_dir / f"proposal_{today}.md"
+    out_path = app_config.proposals_dir / f"proposal_{session.id}_{today}.md"
     # Same anti-clobber pattern as synthesis: append a counter on re-runs.
     counter = 1
     while out_path.exists():
         out_path = (
-            app_config.proposals_dir / f"proposal_{today}_{counter}.md"
+            app_config.proposals_dir
+            / f"proposal_{session.id}_{today}_{counter}.md"
         )
         counter += 1
 
     header = (
-        f"# Proposal Draft for {app_config.session.session_id}\n\n"
-        f"**Question:** {app_config.session.question}\n\n"
+        f"# Proposal Draft for {session.id}\n\n"
+        f"**Title:** {session.title}\n\n"
         f"**Drafted from input by:** "
         f"{', '.join(p.name for p in participants)}\n\n"
         "**Note:** This is an AI-generated draft based on the participant "
@@ -112,15 +116,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Generate a draft proposal + predicted vote signals from "
-            "completed transcripts. Run this AFTER discovery (i.e. after "
-            "running circle.synthesis or at least after enough participants "
-            "have reached `complete`)."
+            "completed transcripts. Run this AFTER discovery."
         )
     )
     parser.add_argument(
-        "--config",
-        default="config/session_config.yaml",
-        help="Path to the session config YAML.",
+        "--session",
+        required=True,
+        help="Session id to draft a proposal for.",
     )
     args = parser.parse_args()
 
@@ -129,13 +131,14 @@ def main() -> None:
     )
 
     try:
-        app_config = load_app_config(args.config, require_ffmpeg=False)
-    except ConfigError as exc:
+        app_config = load_app_config(require_ffmpeg=False)
+        session = load_session(args.session, app_config.sessions_dir)
+    except (ConfigError, Exception) as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         sys.exit(2)
 
     try:
-        out_path = asyncio.run(run_proposal(app_config))
+        out_path = asyncio.run(run_proposal(session, app_config))
     except Exception as exc:
         print(f"proposal generation failed: {exc}", file=sys.stderr)
         sys.exit(1)

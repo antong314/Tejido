@@ -1,15 +1,16 @@
 """Combined Telegram + Web entrypoint.
 
-Runs the Telegram bot poller and the FastAPI web app in a single asyncio
-event loop, sharing one BotContext. Both surfaces see the same state
-files, the same per-participant locks, the same Anthropic client, the
-same Whisper model.
+Runs the FastAPI web server (multi-session) and optionally the Telegram
+poller (single-session, bound to whichever session you pass via
+--telegram-session) in a single asyncio event loop. Both share one
+SessionRegistry — same BotContexts, same per-session locks, same data
+files. A participant could in principle have one tab open via web and
+another via Telegram talking to the same session — they'd just be
+treated as two different participants (different identity resolution).
 
-    python -m circle.run --config config/session_config.yaml
-
-Use `python -m circle.bot --config ...` if you want Telegram only;
-`python -m circle.web --config ...` if you want web only. This module
-is for the both-at-once case.
+Usage:
+    python -m circle.run                                   # web only
+    python -m circle.run --telegram-session bylaws_v2     # web + Telegram on bylaws_v2
 """
 
 from __future__ import annotations
@@ -22,10 +23,9 @@ import sys
 import uvicorn
 from telegram.ext import ApplicationBuilder
 
-from .anthropic_client import AnthropicClient
 from .config import ConfigError, load_app_config
 from .handlers import commands, consent, conversation, permissions
-from .runtime import BotContext
+from .registry import SessionRegistry
 from .web.app import create_app
 from .whisper_client import WhisperTranscriber
 
@@ -42,50 +42,51 @@ def _configure_logging() -> None:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
-async def _run_combined(args: argparse.Namespace, app_config) -> None:
-    anthropic = AnthropicClient(
-        api_key=app_config.secrets.anthropic_api_key,
-        default_model=app_config.session.facilitator_model,
-    )
+async def _run_combined(args: argparse.Namespace) -> None:
+    app_config = load_app_config()
     whisper = WhisperTranscriber(
-        model_name=app_config.session.whisper.model,
-        models_dir=app_config.session.whisper.models_dir,
+        model_name="medium",
+        models_dir="models/",
     )
-    context = BotContext(config=app_config, anthropic=anthropic, whisper=whisper)
+    registry = SessionRegistry(app_config=app_config, whisper=whisper)
 
-    # Telegram polling client
-    tg_app = (
-        ApplicationBuilder()
-        .token(app_config.secrets.telegram_bot_token)
-        .build()
-    )
-    for handler in commands.build_handlers(context):
-        tg_app.add_handler(handler)
-    for handler in consent.build_handlers(context):
-        tg_app.add_handler(handler)
-    for handler in permissions.build_handlers(context):
-        tg_app.add_handler(handler)
-    for handler in conversation.build_handlers(context):
-        tg_app.add_handler(handler)
-
-    # FastAPI server
-    fastapi_app = create_app(context)
+    fastapi_app = create_app(registry=registry)
     uv_config = uvicorn.Config(
-        fastapi_app,
-        host=args.host,
-        port=args.port,
-        log_level="info",
+        fastapi_app, host=args.host, port=args.port, log_level="info"
     )
     uv_server = uvicorn.Server(uv_config)
 
-    # Boot Telegram polling in the background, run uvicorn in the foreground.
-    await tg_app.initialize()
-    await tg_app.start()
-    await tg_app.updater.start_polling()
+    tg_app = None
+    if args.telegram_session:
+        tg_context = await registry.get(args.telegram_session)
+        if tg_context is None:
+            print(
+                f"--telegram-session {args.telegram_session!r} not found in "
+                f"{app_config.sessions_dir}",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        tg_app = (
+            ApplicationBuilder()
+            .token(app_config.secrets.telegram_bot_token)
+            .build()
+        )
+        for handler in commands.build_handlers(tg_context):
+            tg_app.add_handler(handler)
+        for handler in consent.build_handlers(tg_context):
+            tg_app.add_handler(handler)
+        for handler in permissions.build_handlers(tg_context):
+            tg_app.add_handler(handler)
+        for handler in conversation.build_handlers(tg_context):
+            tg_app.add_handler(handler)
+        await tg_app.initialize()
+        await tg_app.start()
+        await tg_app.updater.start_polling()
 
     logger.info(
-        "tejido starting | session=%s | telegram=on | web=http://%s:%s/",
-        app_config.session.session_id,
+        "tejido starting | sessions=%s | telegram=%s | web=http://%s:%s/",
+        registry.list_session_ids(),
+        args.telegram_session or "off",
         args.host,
         args.port,
     )
@@ -94,46 +95,44 @@ async def _run_combined(args: argparse.Namespace, app_config) -> None:
         await uv_server.serve()
     finally:
         logger.info("shutting down...")
-        try:
-            await tg_app.updater.stop()
-            await tg_app.stop()
-            await tg_app.shutdown()
-        except Exception:
-            logger.exception("error shutting down telegram client")
+        if tg_app is not None:
+            try:
+                await tg_app.updater.stop()
+                await tg_app.stop()
+                await tg_app.shutdown()
+            except Exception:
+                logger.exception("error shutting down telegram client")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run Tejido — Telegram bot and web UI in one process."
+        description=(
+            "Run Tejido — multi-session web UI plus, optionally, the "
+            "Telegram bot bound to a single session."
+        )
     )
     parser.add_argument(
-        "--config",
-        default="config/session_config.yaml",
-        help="Path to the session config YAML.",
+        "--telegram-session",
+        default=None,
+        help=(
+            "Session id to bind the Telegram bot to. Omit to run web-only."
+        ),
     )
-    parser.add_argument(
-        "--host",
-        default="127.0.0.1",
-        help="Host interface for the web server (default loopback only).",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=8000,
-        help="TCP port for the web server.",
-    )
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
     _configure_logging()
 
     try:
-        app_config = load_app_config(args.config)
+        # Validate config + ffmpeg early before booting asyncio.
+        load_app_config()
     except ConfigError as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         sys.exit(2)
 
     try:
-        asyncio.run(_run_combined(args, app_config))
+        asyncio.run(_run_combined(args))
     except KeyboardInterrupt:
         pass
 

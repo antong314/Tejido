@@ -1,0 +1,21 @@
+{
+  "id": "solo_test_002",
+  "title": "Solo Test 002",
+  "workflow_type": "open_discussion",
+  "created_at": "2026-04-29T19:58:05.375246+00:00",
+  "common": {
+    "facilitator_model": "claude-sonnet-4-5",
+    "synthesis_model": "claude-sonnet-4-5",
+    "language": "auto",
+    "expected_duration_minutes": 10,
+    "ai_persona": ""
+  },
+  "whisper": {
+    "model": "medium",
+    "models_dir": "models/"
+  },
+  "workflow_data": {
+    "question": "When you imagine the next five years of your life, what's the one thing you most don't want to look back and regret — and what would it take to make sure you don't?",
+    "context": "Second solo smoke test of the Circle prototype, primarily to see how the\nfacilitator behaves after the prompt updates around pacing, single-question\nturns, and earlier reflection. The question is deliberately personal and\nopen-ended so the bot has room to probe (or, ideally, to wrap gracefully\nwhen the participant feels done)."
+  }
+}

@@ -84,6 +84,7 @@ export default function App() {
 
   return (
     <Chat
+      sessionId={sessionId}
       participantId={identity.participant_id}
       displayName={identity.display_name}
       onResetIdentity={() => {

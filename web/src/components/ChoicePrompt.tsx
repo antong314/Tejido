@@ -3,6 +3,7 @@ import { sendCallback, ApiError } from "../api";
 import type { Choice, ParseMode } from "../types";
 
 interface Props {
+  sessionId: string;
   participantId: string;
   text: string;
   parseMode: ParseMode;
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function ChoicePrompt({
+  sessionId,
   participantId,
   text,
   parseMode,
@@ -26,7 +28,7 @@ export function ChoicePrompt({
     setSubmitting(true);
     setError(null);
     try {
-      await sendCallback(participantId, callback_data);
+      await sendCallback(sessionId, participantId, callback_data);
     } catch (e) {
       if (e instanceof ApiError) setError(e.message);
       else setError("Couldn't send your choice. Try again?");

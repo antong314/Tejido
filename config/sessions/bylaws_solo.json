@@ -1,0 +1,21 @@
+{
+  "id": "bylaws_solo",
+  "title": "Bylaws Solo",
+  "workflow_type": "open_discussion",
+  "created_at": "2026-04-24T21:13:55.200058+00:00",
+  "common": {
+    "facilitator_model": "claude-sonnet-4-5",
+    "synthesis_model": "claude-sonnet-4-5",
+    "language": "auto",
+    "expected_duration_minutes": 10,
+    "ai_persona": ""
+  },
+  "whisper": {
+    "model": "medium",
+    "models_dir": "models/"
+  },
+  "workflow_data": {
+    "question": "Our bylaws use vague terms that we need to interpret together as a community. We'd like to hear where you land on each of these three, and — more importantly — what principles you think should guide us.\n\n1. \"Commercial activity\" in residential lots. The bylaws forbid it, but what do we want it to mean? Obviously (?) someone doing acupuncture out of their home is ridiculous to forbid. What about running a weekend plant-medicine retreat for 2 people? What about one for 50 people? What about a food truck on your lot?\n\n2. \"Commercial activity\" in the common areas. The bylaws forbid it here too. Obviously (?) a neighbor leading a donation-based breathwork session for 90 minutes is ridiculous to forbid. So is a donation-based dance that ends at 7pm. What about a cooking class with 40 participants that lasts all day? What about a $1000 life-coaching weekend seminar?\n\n3. \"Exclusive use\" of each neighborhood's common area. The bylaws say each neighborhood has exclusive use of their common area. That means I'm in violation when I go to Ceiba for sunset, and Anton is in violation when he comes to Almendro for boxing when I'm not there. It's also essentially unenforceable without someone policing it. We need to clarify as a community how we want to use our common spaces.",
+    "context": "These three questions are really one conversation: how do we as a community want to interpret the bylaws around shared space and private activity? Participants should feel free to spend more time on whichever sub-question is most alive for them, but we'd like at least a first-pass view on all three. The concrete scenarios inside each question are good probing material — the facilitator should feel free to use them to test the edges of the participant's view."
+  }
+}

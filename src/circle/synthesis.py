@@ -29,8 +29,10 @@ from .anthropic_client import (
 )
 from .config import AppConfig, ConfigError, load_app_config
 from .prompts import render_synthesis_prompt
+from .session import Session, load_session
 from .state import ParticipantState, Phase
 from .storage import list_participant_files
+from .workflows import get_community_context, get_synthesis_question
 
 logger = logging.getLogger(__name__)
 
@@ -146,11 +148,11 @@ def assemble_transcripts_block(participants: list[FilteredParticipant]) -> str:
     return "\n".join(sections)
 
 
-def collect_completed(app_config: AppConfig) -> list[FilteredParticipant]:
+def collect_completed(data_dir: Path) -> list[FilteredParticipant]:
     import json
 
     filtered: list[FilteredParticipant] = []
-    for path in list_participant_files(app_config.data_dir):
+    for path in list_participant_files(data_dir):
         with path.open("r", encoding="utf-8") as handle:
             raw = json.load(handle)
         result = filter_for_synthesis(raw)
@@ -159,12 +161,13 @@ def collect_completed(app_config: AppConfig) -> list[FilteredParticipant]:
     return filtered
 
 
-async def run_synthesis(app_config: AppConfig) -> Path:
-    participants = collect_completed(app_config)
+async def run_synthesis(session: Session, app_config: AppConfig) -> Path:
+    data_dir = app_config.data_dir_for(session.id)
+    participants = collect_completed(data_dir)
     if not participants:
         raise RuntimeError(
             "No completed participants with shareable content found in "
-            f"{app_config.data_dir}"
+            f"{data_dir}"
         )
     if len(participants) < 2:
         logger.warning(
@@ -174,17 +177,17 @@ async def run_synthesis(app_config: AppConfig) -> Path:
 
     transcripts_block = assemble_transcripts_block(participants)
     prompt = render_synthesis_prompt(
-        question=app_config.session.question,
+        question=get_synthesis_question(session),
         transcripts=transcripts_block,
-        community_context=app_config.session.community_context,
+        community_context=get_community_context(session),
     )
 
     anthropic = AnthropicClient(
         api_key=app_config.secrets.anthropic_api_key,
-        default_model=app_config.session.synthesis_model,
+        default_model=session.common.synthesis_model,
     )
 
-    logger.info("calling synthesis model=%s", app_config.session.synthesis_model)
+    logger.info("calling synthesis model=%s", session.common.synthesis_model)
     output = await anthropic.complete(
         system=prompt,
         messages=[
@@ -193,25 +196,26 @@ async def run_synthesis(app_config: AppConfig) -> Path:
                 content="Please produce the synthesis for the group now.",
             )
         ],
-        model=app_config.session.synthesis_model,
+        model=session.common.synthesis_model,
         temperature=SYNTHESIS_TEMPERATURE,
         max_tokens=SYNTHESIS_MAX_TOKENS,
     )
 
     today = datetime.now().strftime("%Y%m%d")
-    out_path = app_config.syntheses_dir / f"synthesis_{today}.md"
-    # If the facilitator re-runs synthesis (e.g. after a late finisher), don't
-    # clobber the previous file — append a counter.
+    out_path = app_config.syntheses_dir / f"synthesis_{session.id}_{today}.md"
+    # If the facilitator re-runs synthesis (e.g. after a late finisher),
+    # don't clobber the previous file — append a counter.
     counter = 1
     while out_path.exists():
         out_path = (
-            app_config.syntheses_dir / f"synthesis_{today}_{counter}.md"
+            app_config.syntheses_dir
+            / f"synthesis_{session.id}_{today}_{counter}.md"
         )
         counter += 1
 
     header = (
-        f"# Synthesis for {app_config.session.session_id}\n\n"
-        f"**Question:** {app_config.session.question}\n\n"
+        f"# Synthesis for {session.id}\n\n"
+        f"**Title:** {session.title}\n\n"
         f"**Participants included:** "
         f"{', '.join(p.name for p in participants)}\n\n"
         "---\n\n"
@@ -225,9 +229,9 @@ def main() -> None:
         description="Generate the group synthesis from completed transcripts."
     )
     parser.add_argument(
-        "--config",
-        default="config/session_config.yaml",
-        help="Path to the session config YAML.",
+        "--session",
+        required=True,
+        help="Session id to synthesize (looked up in config/sessions/).",
     )
     args = parser.parse_args()
 
@@ -236,13 +240,14 @@ def main() -> None:
     )
 
     try:
-        app_config = load_app_config(args.config, require_ffmpeg=False)
-    except ConfigError as exc:
+        app_config = load_app_config(require_ffmpeg=False)
+        session = load_session(args.session, app_config.sessions_dir)
+    except (ConfigError, Exception) as exc:
         print(f"configuration error: {exc}", file=sys.stderr)
         sys.exit(2)
 
     try:
-        out_path = asyncio.run(run_synthesis(app_config))
+        out_path = asyncio.run(run_synthesis(session, app_config))
     except Exception as exc:
         print(f"synthesis failed: {exc}", file=sys.stderr)
         sys.exit(1)

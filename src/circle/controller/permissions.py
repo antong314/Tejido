@@ -195,7 +195,7 @@ async def begin_permissions_phase(
                             content=render_extraction_prompt(transcript_text),
                         )
                     ],
-                    model=session.config.session.facilitator_model,
+                    model=session.facilitator_model,
                     temperature=EXTRACTION_TEMPERATURE,
                     max_tokens=EXTRACTION_MAX_TOKENS,
                 )

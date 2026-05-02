@@ -1,10 +1,8 @@
 """Tests for the FastAPI web adapter — join + state endpoints.
 
-These exercise the full HTTP path through to the storage layer using
-FastAPI's TestClient (sync, runs the app in-process), so we get a real
-end-to-end check that name claiming, dupe detection, and state retrieval
-work as expected. The Anthropic + Whisper clients are stubbed because
-the join/state paths never call them.
+Multi-session now: every per-participant route is scoped under a
+session id. The TestClient drives the same routes through a stub
+SessionRegistry holding a single session.
 """
 
 from __future__ import annotations
@@ -19,13 +17,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from circle.config import (  # noqa: E402
-    AppConfig,
-    Secrets,
-    SessionConfig,
-    WhisperConfig,
+from circle.config import AppConfig, Secrets  # noqa: E402
+from circle.registry import SessionRegistry  # noqa: E402
+from circle.session import (  # noqa: E402
+    CommonSettings,
+    WhisperSettings,
+    new_session,
+    save_session,
 )
-from circle.runtime import BotContext  # noqa: E402
 from circle.web.app import create_app  # noqa: E402
 
 
@@ -36,34 +35,45 @@ def _build_test_client(test: unittest.TestCase) -> tuple[TestClient, Path]:
     """Returns (client, data_dir). Tempdir cleanup is registered with `test`."""
     tmpdir = tempfile.TemporaryDirectory()
     test.addCleanup(tmpdir.cleanup)
+    root = Path(tmpdir.name)
 
-    data_dir = Path(tmpdir.name) / "data" / SESSION_ID
-    data_dir.mkdir(parents=True)
+    sessions_dir = root / "config" / "sessions"
+    data_dir_base = root / "data"
+    syntheses_dir = root / "syntheses"
+    proposals_dir = root / "proposals"
+    revisions_dir = root / "revisions"
+    sessions_dir.mkdir(parents=True)
+    data_dir_base.mkdir(parents=True)
+    syntheses_dir.mkdir(parents=True)
+    proposals_dir.mkdir(parents=True)
+    revisions_dir.mkdir(parents=True)
 
-    session = SessionConfig(
-        session_id=SESSION_ID,
-        question="Test?",
-        context="",
-        community_context="",
-        language="auto",
-        facilitator_model="claude-sonnet-4-5",
-        synthesis_model="claude-sonnet-4-5",
-        whisper=WhisperConfig(),
-        config_path=Path("test.yaml"),
-    )
     secrets = Secrets(anthropic_api_key="test", telegram_bot_token="test")
     app_config = AppConfig(
-        session=session,
         secrets=secrets,
-        data_dir=data_dir,
-        syntheses_dir=Path(tmpdir.name) / "syntheses",
-        proposals_dir=Path(tmpdir.name) / "proposals",
+        sessions_dir=sessions_dir,
+        data_dir_base=data_dir_base,
+        syntheses_dir=syntheses_dir,
+        proposals_dir=proposals_dir,
+        revisions_dir=revisions_dir,
     )
-    context = BotContext(
-        config=app_config, anthropic=MagicMock(), whisper=MagicMock()
+
+    session = new_session(
+        id=SESSION_ID,
+        title="Test session",
+        workflow_type="open_discussion",
+        common=CommonSettings(),
+        whisper=WhisperSettings(),
+        workflow_data={"question": "Test?"},
     )
-    app = create_app(context)
+    save_session(session, sessions_dir)
+
+    registry = SessionRegistry(app_config=app_config, whisper=MagicMock())
+    app = create_app(registry=registry)
     client = TestClient(app)
+
+    data_dir = app_config.data_dir_for(SESSION_ID)
+    data_dir.mkdir(parents=True, exist_ok=True)
     return client, data_dir
 
 
@@ -79,11 +89,7 @@ class JoinEndpointTests(unittest.TestCase):
     def test_session_page_renders(self) -> None:
         r = self.client.get(f"/s/{SESSION_ID}")
         self.assertEqual(r.status_code, 200)
-        # Either the built React app's index.html (when web/dist exists) or
-        # the placeholder HTML (when it doesn't) — both contain "Tejido".
         self.assertIn("Tejido", r.text)
-        # The React app reads session_id from window.location at runtime,
-        # so we don't assert on it being present in the HTML.
 
     def test_session_page_404s_unknown_session(self) -> None:
         r = self.client.get("/s/wrong_session")
@@ -97,7 +103,6 @@ class JoinEndpointTests(unittest.TestCase):
         body = r.json()
         self.assertEqual(body["display_name"], "Anton")
         self.assertTrue(body["participant_id"])
-        # Persisted on disk.
         self.assertTrue(
             (self.data_dir / f"{body['participant_id']}.json").exists()
         )
@@ -129,7 +134,6 @@ class JoinEndpointTests(unittest.TestCase):
         self.assertEqual(r.status_code, 404)
 
     def test_join_validates_session_id_pattern(self) -> None:
-        # Path constraint rejects characters outside [a-zA-Z0-9_-]
         r = self.client.post("/api/s/bad..id/join", json={"name": "Anton"})
         self.assertEqual(r.status_code, 422)
 
@@ -137,7 +141,6 @@ class JoinEndpointTests(unittest.TestCase):
 class StateEndpointTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client, self.data_dir = _build_test_client(self)
-        # Pre-create a participant via /join.
         r = self.client.post(
             f"/api/s/{SESSION_ID}/join", json={"name": "Anton"}
         )
@@ -145,24 +148,31 @@ class StateEndpointTests(unittest.TestCase):
         self.participant_id = r.json()["participant_id"]
 
     def test_state_returns_initial_shape(self) -> None:
-        r = self.client.get(f"/api/p/{self.participant_id}/state")
+        r = self.client.get(
+            f"/api/s/{SESSION_ID}/p/{self.participant_id}/state"
+        )
         self.assertEqual(r.status_code, 200, r.text)
         body = r.json()
         self.assertEqual(body["participant_id"], self.participant_id)
         self.assertEqual(body["participant_name"], "Anton")
         self.assertEqual(body["session_id"], SESSION_ID)
-        self.assertEqual(body["question"], "Test?")
-        # /join transitions NOT_STARTED → AWAITING_CONSENT so the
-        # frontend can render the welcome card with the consent button.
+        # /join transitions NOT_STARTED → AWAITING_CONSENT.
         self.assertEqual(body["phase"], "awaiting_consent")
         self.assertEqual(body["transcript"], [])
         self.assertEqual(body["extracted_points"], [])
         self.assertEqual(body["additions"], [])
+        # Workflow type + UI hints surface to the frontend.
+        self.assertEqual(body["workflow_type"], "open_discussion")
+        self.assertEqual(body["workflow_ui"], {})
 
     def test_state_404s_unknown_participant(self) -> None:
-        r = self.client.get("/api/p/does_not_exist/state")
+        r = self.client.get(f"/api/s/{SESSION_ID}/p/does_not_exist/state")
         self.assertEqual(r.status_code, 404)
         self.assertEqual(r.json()["detail"]["code"], "participant_not_found")
+
+    def test_state_404s_unknown_session(self) -> None:
+        r = self.client.get(f"/api/s/wrong/p/{self.participant_id}/state")
+        self.assertEqual(r.status_code, 404)
 
 
 if __name__ == "__main__":

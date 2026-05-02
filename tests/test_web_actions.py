@@ -1,5 +1,5 @@
-"""Tests for the new web pieces: render_action, SSEHub, dispatch, and
-the /message and /callback endpoints.
+"""Tests for the web pieces beyond join/state: render_action, SSEHub,
+dispatch, and the /message and /callback endpoints.
 
 The /events SSE endpoint is exercised manually via curl in the smoke
 test; testing streaming responses through TestClient is awkward and
@@ -13,19 +13,20 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from circle.config import (  # noqa: E402
-    AppConfig,
-    Secrets,
-    SessionConfig,
-    WhisperConfig,
+from circle.config import AppConfig, Secrets  # noqa: E402
+from circle.registry import SessionRegistry  # noqa: E402
+from circle.session import (  # noqa: E402
+    CommonSettings,
+    WhisperSettings,
+    new_session,
+    save_session,
 )
-from circle.runtime import BotContext  # noqa: E402
 from circle.transport import (  # noqa: E402
     Choice,
     ResolveChoice,
@@ -128,7 +129,7 @@ class _StubAnthropic:
         self._responses = list(responses)
         self.calls: list[dict] = []
 
-    async def complete(self, **kwargs):  # noqa: ANN003 — match real signature loosely
+    async def complete(self, **kwargs):  # noqa: ANN003
         self.calls.append(kwargs)
         if not self._responses:
             return ""
@@ -140,41 +141,50 @@ def _build_test_client(
 ) -> tuple[TestClient, Path, _StubAnthropic]:
     tmpdir = tempfile.TemporaryDirectory()
     test.addCleanup(tmpdir.cleanup)
+    root = Path(tmpdir.name)
 
-    data_dir = Path(tmpdir.name) / "data" / SESSION_ID
-    data_dir.mkdir(parents=True)
+    sessions_dir = root / "config" / "sessions"
+    data_dir_base = root / "data"
+    sessions_dir.mkdir(parents=True)
+    data_dir_base.mkdir(parents=True)
 
-    session = SessionConfig(
-        session_id=SESSION_ID,
-        question="Test?",
-        context="",
-        community_context="",
-        language="auto",
-        facilitator_model="claude-sonnet-4-5",
-        synthesis_model="claude-sonnet-4-5",
-        whisper=WhisperConfig(),
-        config_path=Path("test.yaml"),
-    )
     secrets = Secrets(anthropic_api_key="test", telegram_bot_token="test")
     app_config = AppConfig(
-        session=session,
         secrets=secrets,
-        data_dir=data_dir,
-        syntheses_dir=Path(tmpdir.name) / "syntheses",
-        proposals_dir=Path(tmpdir.name) / "proposals",
+        sessions_dir=sessions_dir,
+        data_dir_base=data_dir_base,
+        syntheses_dir=root / "syntheses",
+        proposals_dir=root / "proposals",
+        revisions_dir=root / "revisions",
     )
+
+    session = new_session(
+        id=SESSION_ID,
+        title="Test session",
+        workflow_type="open_discussion",
+        common=CommonSettings(),
+        whisper=WhisperSettings(),
+        workflow_data={"question": "Test?"},
+    )
+    save_session(session, sessions_dir)
+
     anthropic = _StubAnthropic(*anthropic_responses)
-    context = BotContext(
-        config=app_config, anthropic=anthropic, whisper=MagicMock()
-    )
-    app = create_app(context)
+    registry = SessionRegistry(app_config=app_config, whisper=MagicMock())
+
+    # Pre-seed the registry's BotContext with our stub Anthropic so the
+    # controller routes don't try to make real API calls.
+    async def _seed():
+        ctx = await registry.get(SESSION_ID)
+        assert ctx is not None
+        ctx.anthropic = anthropic  # type: ignore[assignment]
+    asyncio.run(_seed())
+
+    app = create_app(registry=registry)
     client = TestClient(app)
-    return client, data_dir, anthropic
+    return client, app_config.data_dir_for(SESSION_ID), anthropic
 
 
-def _create_participant(
-    client: TestClient, name: str = "Anton"
-) -> tuple[str, str]:
+def _create_participant(client: TestClient, name: str = "Anton") -> tuple[str, str]:
     r = client.post(f"/api/s/{SESSION_ID}/join", json={"name": name})
     assert r.status_code == 200, r.text
     body = r.json()
@@ -185,22 +195,22 @@ class MessageEndpointTests(unittest.TestCase):
     def test_404s_unknown_participant(self) -> None:
         client, _, _ = _build_test_client(self)
         r = client.post(
-            "/api/p/does_not_exist/message",
+            f"/api/s/{SESSION_ID}/p/does_not_exist/message",
             json={"text": "hi"},
         )
         self.assertEqual(r.status_code, 404)
         self.assertEqual(r.json()["detail"]["code"], "participant_not_found")
 
     def test_message_in_awaiting_consent_phase_emits_nudge(self) -> None:
-        # After /join, the participant is in AWAITING_CONSENT (waiting on
-        # the welcome-card button). A free-text submission at this point
-        # gets nudged toward the button instead of being added to the
-        # transcript.
+        # After /join, phase is AWAITING_CONSENT; a free-text submission
+        # at this point gets nudged toward the button.
         client, _, _ = _build_test_client(self)
         pid, _ = _create_participant(client)
-        r = client.post(f"/api/p/{pid}/message", json={"text": "hi"})
+        r = client.post(
+            f"/api/s/{SESSION_ID}/p/{pid}/message", json={"text": "hi"}
+        )
         self.assertEqual(r.status_code, 200)
-        s = client.get(f"/api/p/{pid}/state").json()
+        s = client.get(f"/api/s/{SESSION_ID}/p/{pid}/state").json()
         self.assertEqual(s["phase"], "awaiting_consent")
         self.assertEqual(s["transcript"], [])
 
@@ -209,7 +219,7 @@ class CallbackEndpointTests(unittest.TestCase):
     def test_404s_unknown_participant(self) -> None:
         client, _, _ = _build_test_client(self)
         r = client.post(
-            "/api/p/does_not_exist/callback",
+            f"/api/s/{SESSION_ID}/p/does_not_exist/callback",
             json={"callback_data": "consent:ready"},
         )
         self.assertEqual(r.status_code, 404)
@@ -218,7 +228,7 @@ class CallbackEndpointTests(unittest.TestCase):
         client, _, _ = _build_test_client(self)
         pid, _ = _create_participant(client)
         r = client.post(
-            f"/api/p/{pid}/callback",
+            f"/api/s/{SESSION_ID}/p/{pid}/callback",
             json={"callback_data": "bogus:thing"},
         )
         self.assertEqual(r.status_code, 400)
@@ -272,63 +282,35 @@ class DispatchTests(unittest.TestCase):
             )
 
     def test_consent_returns_iterator(self) -> None:
-        # Non-raising case: just verify dispatch picks the right method
-        # without exploding. The async generator isn't iterated here.
         result = dispatch_callback(
             callback_data="consent:ready",
             participant_id="p",
             display_name="P",
             session=MagicMock(),
         )
-        # async generator object — has __aiter__
         self.assertTrue(hasattr(result, "__aiter__"))
 
 
 class StartFlowEndToEndTests(unittest.TestCase):
     """Drive a real /callback through the controller using a stub Anthropic.
 
-    Goes /join -> consent:ready -> verifies opening turn arrived as
-    transcript and was broadcast on SSE.
+    Goes /join -> consent:ready -> verifies the opening turn arrived as a
+    transcript turn.
     """
 
     def test_consent_callback_drives_opening_turn(self) -> None:
-        # Two anthropic responses prepared: opening turn (no [READY]).
-        # The consent callback only triggers ONE LLM call (the opener),
-        # so one stubbed response is enough.
         client, _, anthropic = _build_test_client(
             self, anthropic_responses=("Welcome — what's on your mind?",)
         )
         pid, _ = _create_participant(client)
-        # First the participant must /start (transition to awaiting_consent).
-        # That happens through the Telegram path, not exposed on web. We
-        # simulate by calling the consent controller's handle_start through
-        # a callback... no, simpler: just write the phase directly.
-        # In practice the React UI will hit a /start equivalent before the
-        # consent button is enabled. For now, transition the phase directly
-        # via the controller; the web is supposed to surface a "Begin"
-        # button as the first UI element (commit 4 work).
-        from circle.controller import consent as c
 
-        async def _start():
-            actions = c.handle_start(
-                participant_id=pid,
-                display_name="Anton",
-                session=client.app.state.context,
-            )
-            async for _ in actions:
-                pass
-
-        asyncio.run(_start())
-
-        # Now tap consent:ready
         r = client.post(
-            f"/api/p/{pid}/callback",
+            f"/api/s/{SESSION_ID}/p/{pid}/callback",
             json={"callback_data": "consent:ready"},
         )
         self.assertEqual(r.status_code, 200, r.text)
-        s = client.get(f"/api/p/{pid}/state").json()
+        s = client.get(f"/api/s/{SESSION_ID}/p/{pid}/state").json()
         self.assertEqual(s["phase"], "in_conversation")
-        # Opening assistant turn was appended.
         roles = [t["role"] for t in s["transcript"]]
         self.assertEqual(roles, ["assistant"])
         self.assertIn("Welcome", s["transcript"][0]["content"])
