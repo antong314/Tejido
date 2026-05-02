@@ -1,24 +1,37 @@
 """System prompts.
 
-The three prompts below are reproduced verbatim from PRD sections 3.1, 3.2,
-and 3.3. Edit them in place to tune behavior; PRD section 9 explicitly calls
-out the readiness threshold and surrounding behaviors as judgment calls that
-will need iteration. The placeholders ({QUESTION}, {CONTEXT}, {TRANSCRIPT},
-{TRANSCRIPTS}) are filled at call time via str.format.
+The facilitator prompt is split into three pieces:
+
+  * PERSONA — the "who you are" framing. Configurable per session via the
+    admin UI; defaults are defined per workflow type in `circle.workflows`.
+  * QUESTION_BLOCK + CONTEXT — workflow-specific content built from the
+    session's `workflow_data`.
+  * MECHANICS — the fixed how-to-facilitate scaffolding (probing,
+    pacing, the [READY_FOR_PERMISSIONS] token). NOT user-editable.
+
+The synthesis and proposal prompts stay as monolithic templates because
+their tuning is deep and not currently exposed for user editing.
+
+The placeholders ({QUESTION}, {CONTEXT}, {TRANSCRIPT}, {TRANSCRIPTS},
+{PERSONA}, {QUESTION_BLOCK}) are filled at call time via str.format.
 """
 
 from __future__ import annotations
 
 
-FACILITATOR_SYSTEM_PROMPT = """\
-You are a thoughtful facilitator helping someone think through a question that matters to their community. You are NOT an expert, NOT an advocate, and NOT trying to inform or persuade. Your only job is to help this person articulate what they actually think and feel — including the parts they haven't fully worked out yet.
+# The default persona used by the legacy single-arg `render_facilitator_prompt`.
+# New code should pass an explicit persona (workflow default or user override).
+LEGACY_FACILITATOR_PERSONA = (
+    "You are a thoughtful facilitator helping someone think through a "
+    "question that matters to their community. You are NOT an expert, NOT "
+    "an advocate, and NOT trying to inform or persuade. Your only job is "
+    "to help this person articulate what they actually think and feel — "
+    "including the parts they haven't fully worked out yet."
+)
 
-THE QUESTION BEING EXPLORED:
-{QUESTION}
 
-CONTEXT (share only if asked):
-{CONTEXT}
-
+# The fixed how-to-facilitate scaffolding. Not configurable per session.
+FACILITATOR_MECHANICS = """\
 YOUR APPROACH:
 
 Start open. Don't telegraph any position. Begin with something like: "Before we get into specifics, what's your gut reaction when you think about this question? What comes up for you?"
@@ -86,6 +99,19 @@ You SHOULD also output [READY_FOR_PERMISSIONS] if any of the following are true:
 - You've done a reflection and they confirmed it captures their view, with no further additions.
 
 When in doubt between asking one more question and wrapping up a participant who seems ready, wrap up.
+"""
+
+
+FACILITATOR_SYSTEM_PROMPT_TEMPLATE = """\
+{PERSONA}
+
+THE QUESTION BEING EXPLORED:
+{QUESTION_BLOCK}
+
+CONTEXT (share only if asked):
+{CONTEXT}
+
+{MECHANICS}\
 """
 
 
@@ -302,8 +328,41 @@ WHAT NOT TO DO:
 READY_TOKEN = "[READY_FOR_PERMISSIONS]"
 
 
-def render_facilitator_prompt(question: str, context: str) -> str:
-    return FACILITATOR_SYSTEM_PROMPT.format(QUESTION=question, CONTEXT=context or "(none provided)")
+def render_facilitator_prompt(
+    question: str | None = None,
+    context: str | None = None,
+    *,
+    persona: str | None = None,
+    question_block: str | None = None,
+) -> str:
+    """Assemble the facilitator system prompt.
+
+    Two calling styles are supported during the migration:
+
+      * Legacy positional: `render_facilitator_prompt(question, context)`.
+        Uses the default persona; `question` is the question block.
+      * Workflow-aware keyword: `render_facilitator_prompt(persona=...,
+        question_block=..., context=...)`. The session-aware path.
+
+    The new keyword style is preferred — pass an explicit persona (workflow
+    default or user override) and a question_block built by
+    `circle.workflows.build_question_block(session)`.
+    """
+    if question_block is None:
+        if question is None:
+            raise TypeError(
+                "render_facilitator_prompt requires either `question` "
+                "(legacy positional) or `question_block` (keyword)"
+            )
+        question_block = question
+    if persona is None:
+        persona = LEGACY_FACILITATOR_PERSONA
+    return FACILITATOR_SYSTEM_PROMPT_TEMPLATE.format(
+        PERSONA=persona.strip(),
+        QUESTION_BLOCK=question_block,
+        CONTEXT=context or "(none provided)",
+        MECHANICS=FACILITATOR_MECHANICS,
+    )
 
 
 def render_extraction_prompt(transcript: str) -> str:
