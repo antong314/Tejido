@@ -25,6 +25,7 @@ from circle.workflows import (  # noqa: E402
     WORKFLOW_TYPES,
     WorkflowDataError,
     build_question_block,
+    build_welcome_question,
     get_community_context,
     get_context,
     get_persona,
@@ -184,6 +185,38 @@ class PerWorkflowExtractorTests(unittest.TestCase):
         self.assertIn("1. Like?", block)
         self.assertIn("2. Missing?", block)
 
+    def test_welcome_question_open_discussion_is_just_question(self) -> None:
+        s = self._build(
+            "open_discussion", {"question": "What about hot lunch?"}
+        )
+        self.assertEqual(
+            build_welcome_question(s), "What about hot lunch?"
+        )
+
+    def test_welcome_question_document_revision_omits_facilitator_scaffolding(
+        self,
+    ) -> None:
+        # The participant-facing welcome should include framing + the
+        # document body, but NEVER the walk-through instruction or the
+        # numbered sub-questions list (those are facilitator-only —
+        # quoting them in the welcome made the chat feel like an
+        # interrogation script).
+        s = self._build(
+            "document_revision",
+            {
+                "reference_document": "## Why\n\nWe exist.",
+                "framing": "Take a look.",
+                "sub_questions": ["Like?", "Missing?"],
+            },
+        )
+        welcome = build_welcome_question(s)
+        self.assertIn("Take a look.", welcome)
+        self.assertIn("## Why", welcome)
+        self.assertIn("We exist.", welcome)
+        self.assertNotIn("Walk through these together", welcome)
+        self.assertNotIn("1. Like?", welcome)
+        self.assertNotIn("Missing?", welcome)
+
     def test_get_context_optional(self) -> None:
         s = self._build("open_discussion", {"question": "Q?"})
         self.assertEqual(get_context(s), "")
@@ -235,6 +268,9 @@ class PerWorkflowExtractorTests(unittest.TestCase):
         self.assertIn("side_panel", ui)
         self.assertEqual(ui["side_panel"]["content_md"], "## Why\n\nWe exist.")
         self.assertTrue(ui["side_panel"]["title"])
+        # Document revision should request the split (left-column,
+        # persistent) layout so the doc is always front-and-center.
+        self.assertEqual(ui["side_panel"]["layout"], "split")
 
     def test_workflow_ui_no_doc_means_no_side_panel(self) -> None:
         # Even though the schema declares a side_panel, if the actual

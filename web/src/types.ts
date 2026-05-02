@@ -46,6 +46,12 @@ export interface StateResponse {
     side_panel?: {
       title: string;
       content_md: string;
+      // "split" — left column, persistent (used by document_revision so
+      //   the doc is always front and center).
+      // "drawer" — right overlay, collapsible (default for any future
+      //   workflow that wants a side panel without committing to the
+      //   half-screen split).
+      layout: "split" | "drawer";
     };
   };
 }

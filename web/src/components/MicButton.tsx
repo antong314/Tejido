@@ -14,6 +14,45 @@ interface Props {
 
 type Status = "idle" | "asking" | "recording" | "uploading" | "error";
 
+// Force a complete EBML cluster to be flushed every TIMESLICE_MS while
+// recording. Without this, MediaRecorder only emits one dataavailable
+// event at stop() — and short recordings produce a blob with the init
+// segment but no clusters, which ffmpeg rejects with "0x00 at pos 36
+// invalid as first byte of an EBML number". 250ms is small enough that
+// even a fast tap produces a usable file.
+const TIMESLICE_MS = 250;
+
+// Reject anything under this duration outright. Below ~600ms we
+// observed inconsistent encoder behavior across browsers — even with
+// a timeslice, the cluster data can be incomplete. Better to tell the
+// user "hold a bit longer" than to send garbage and get a backend error.
+const MIN_RECORDING_MS = 600;
+
+// A valid Opus webm with 600ms of audio is comfortably > 3KB. Anything
+// under this is almost certainly init-segment-only; reject locally so
+// the user gets a fast, accurate error message instead of round-tripping
+// to the backend just to be told ffmpeg failed.
+const MIN_BLOB_BYTES = 1500;
+
+// Probe the browser for a mime type we know works well end-to-end.
+// Order matters: webm/opus is the most reliable across Chrome/Firefox
+// and ffmpeg handles it cleanly. Safari falls through to mp4/aac.
+// If nothing matches, return "" so MediaRecorder picks the default.
+function pickMimeType(): string {
+  if (typeof MediaRecorder === "undefined") return "";
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/mp4",
+    "audio/ogg;codecs=opus",
+  ];
+  for (const c of candidates) {
+    if (MediaRecorder.isTypeSupported(c)) return c;
+  }
+  return "";
+}
+
 export function MicButton({ sessionId, participantId, disabled, onTranscribed }: Props) {
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +96,10 @@ export function MicButton({ sessionId, participantId, disabled, onTranscribed }:
       return;
     }
 
-    const recorder = new MediaRecorder(stream);
+    const mime = pickMimeType();
+    const recorder = mime
+      ? new MediaRecorder(stream, { mimeType: mime })
+      : new MediaRecorder(stream);
     chunksRef.current = [];
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -67,25 +109,53 @@ export function MicButton({ sessionId, participantId, disabled, onTranscribed }:
       stream.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
 
-      const mime = recorder.mimeType || "audio/webm";
-      const blob = new Blob(chunksRef.current, { type: mime });
+      const finalMime = recorder.mimeType || mime || "audio/webm";
+      const blob = new Blob(chunksRef.current, { type: finalMime });
       chunksRef.current = [];
-      await uploadBlob(blob, mime);
+
+      // Local sanity check — a webm with only the init segment is ~36
+      // bytes; a real recording is always much larger. If we got
+      // something tiny, surface a clear "too short" error instead of
+      // sending it and getting a generic 422 back.
+      if (blob.size < MIN_BLOB_BYTES) {
+        setError("Recording was too short. Hold the button for at least a second.");
+        setStatus("error");
+        return;
+      }
+      await uploadBlob(blob, finalMime);
     };
 
     recorderRef.current = recorder;
     streamRef.current = stream;
     startedAtRef.current = Date.now();
-    recorder.start();
+    // Pass timeslice so the encoder flushes a complete cluster every
+    // 250ms — this is the single biggest fix for "0x00 at pos 36"
+    // ffmpeg errors on short recordings.
+    recorder.start(TIMESLICE_MS);
     setStatus("recording");
   }
 
   function stopRecording() {
     const r = recorderRef.current;
-    if (r && r.state !== "inactive") {
-      setStatus("uploading");
-      r.stop();
+    if (!r || r.state === "inactive") return;
+    const elapsed = Date.now() - startedAtRef.current;
+    if (elapsed < MIN_RECORDING_MS) {
+      // Don't honor the stop yet — let the encoder accumulate at least
+      // one full cluster's worth of audio. Schedule the real stop for
+      // when we hit the floor.
+      window.setTimeout(stopRecording, MIN_RECORDING_MS - elapsed);
+      return;
     }
+    setStatus("uploading");
+    // Force a final flush of any in-flight buffer into chunksRef BEFORE
+    // stop(). Without this, the trailing audio between the last
+    // timeslice tick and the stop() call can land in a partial cluster.
+    try {
+      r.requestData();
+    } catch {
+      /* requestData isn't supported in some old browsers — no-op */
+    }
+    r.stop();
   }
 
   async function uploadBlob(blob: Blob, mime: string) {

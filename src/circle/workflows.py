@@ -57,7 +57,10 @@ class WorkflowSchema:
     fields: list[FieldSchema]
     # UI hints for the participant view. Currently supports:
     #   {"side_panel": "<workflow_data field name>"} — render that field's
-    #   markdown content in a collapsible side panel next to the chat.
+    #   markdown content alongside the chat. Layout is controlled by an
+    #   optional companion key:
+    #   {"side_panel_layout": "split"}   — left column, persistent (50/50)
+    #   {"side_panel_layout": "drawer"} — right column, collapsible (default)
     ui: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -197,7 +200,14 @@ WORKFLOW_TYPES: dict[str, WorkflowSchema] = {
         ),
         default_persona=_PERSONA_DOCUMENT_REVISION,
         processor="revise",
-        ui={"side_panel": "reference_document"},
+        # Document-revision participants should always have the document in
+        # front of them — the conversation IS about the document. Use the
+        # left-column persistent split layout rather than the collapsible
+        # right drawer.
+        ui={
+            "side_panel": "reference_document",
+            "side_panel_layout": "split",
+        },
         fields=[
             FieldSchema(
                 name="reference_document",
@@ -360,6 +370,40 @@ def build_question_block(session: "Session") -> str:
     raise UnknownWorkflowType(session.workflow_type)
 
 
+def build_welcome_question(session: "Session") -> str:
+    """Participant-facing version of the question, for the consent welcome.
+
+    Distinct from `build_question_block` because the LLM and the participant
+    need different things:
+
+    * The LLM needs the FULL framing — sub-questions to walk through,
+      facilitator-only instructions like "let them spend more time on
+      whichever is most alive for them," etc. That stays in
+      `build_question_block`.
+    * The participant should see a clean introduction to what the
+      conversation is about — NOT a checklist of questions the
+      facilitator is going to bring up. That's what this helper returns.
+
+    For document_revision specifically: framing + the document body, but
+    no walk-through instruction and no sub-question list. (For the web
+    split layout the doc is already on the left and the welcome doesn't
+    quote it at all — see derive_messages.ts. For Telegram, where
+    there's no side panel, the document body is included so the
+    participant has something concrete to react to before clicking ready.)
+    """
+    data = session.workflow_data
+    if session.workflow_type in ("open_discussion", "decision_drafting"):
+        return str(data.get("question", "")).strip()
+    if session.workflow_type == "document_revision":
+        framing = str(data.get("framing", "")).strip()
+        document = str(data.get("reference_document", "")).strip()
+        return (
+            f"{framing}\n\n"
+            f"---\n{document}\n---"
+        ).strip()
+    raise UnknownWorkflowType(session.workflow_type)
+
+
 def get_context(session: "Session") -> str:
     """Optional facilitator-AI-only context. Empty string if none."""
     return str(session.workflow_data.get("context", "")).strip()
@@ -391,10 +435,17 @@ def get_workflow_ui(session: "Session") -> dict[str, Any]:
         content = str(session.workflow_data.get(side_panel_field, "")).strip()
         if content:
             label = schema.field(side_panel_field).label if schema.field(side_panel_field) else side_panel_field
+            # Default to "drawer" so any future workflow that adds a
+            # side_panel without specifying a layout gets the existing
+            # collapsible right-overlay behavior.
+            layout = str(schema.ui.get("side_panel_layout", "drawer"))
+            if layout not in ("split", "drawer"):
+                layout = "drawer"
             return {
                 "side_panel": {
                     "title": label,
                     "content_md": content,
+                    "layout": layout,
                 }
             }
     return {}
@@ -408,6 +459,7 @@ __all__ = [
     "WorkflowDataError",
     "WorkflowSchema",
     "build_question_block",
+    "build_welcome_question",
     "get_community_context",
     "get_context",
     "get_default_persona",

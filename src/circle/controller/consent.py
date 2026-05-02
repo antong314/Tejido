@@ -19,6 +19,7 @@ from ..anthropic_client import (
 from ..prompts import READY_TOKEN
 from ..runtime import BotContext
 from ..state import Phase, TranscriptTurn
+from ..workflows import build_welcome_question
 from ..transport import (
     Choice,
     OutboundAction,
@@ -93,7 +94,11 @@ async def handle_start(
         if not already_begun:
             state.transition_to(Phase.AWAITING_CONSENT)
             session.save(state)
-        question = state.question
+        # The welcome shows the participant-facing question (no
+        # facilitator-only sub-questions or walk-through scaffolding).
+        # Derived live so an admin edit between participant creation and
+        # consent shows the latest framing.
+        question = build_welcome_question(session.session)
         name = state.participant_name
 
     if already_begun:

@@ -3,6 +3,7 @@ import { fetchState, sendMessage, subscribeEvents, ApiError } from "../api";
 import { deriveInitialMessages } from "../derive_messages";
 import type { ChatMessage, ContentPart, Phase, ServerEvent } from "../types";
 import { ChoicePrompt } from "./ChoicePrompt";
+import { DocumentPanel } from "./DocumentPanel";
 import { MicButton } from "./MicButton";
 import { SidePanel } from "./SidePanel";
 
@@ -19,7 +20,11 @@ const nextMsgId = () => `evt-${++_eventCounter}`;
 export function Chat({ sessionId, participantId, displayName, onResetIdentity }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [phase, setPhase] = useState<Phase>("not_started");
-  const [sidePanel, setSidePanel] = useState<{ title: string; content_md: string } | null>(null);
+  const [sidePanel, setSidePanel] = useState<{
+    title: string;
+    content_md: string;
+    layout: "split" | "drawer";
+  } | null>(null);
   const [typing, setTyping] = useState(false);
   const [pending, setPending] = useState(false);
   const [draft, setDraft] = useState("");
@@ -220,6 +225,78 @@ export function Chat({ sessionId, participantId, displayName, onResetIdentity }:
     return "Type your reply…";
   })();
 
+  // Extracted as local elements so the split and drawer layouts can both
+  // reference them without duplicating the JSX. Both close over the same
+  // state, so this stays cheap.
+  const messagesScroll = (
+    <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-8">
+      <div className="mx-auto max-w-2xl space-y-5">
+        {messages.map((m) => (
+          <MessageBubble
+            key={m.id}
+            message={m}
+            sessionId={sessionId}
+            participantId={participantId}
+          />
+        ))}
+        {typing && (
+          <div className="flex items-center gap-1.5 px-2">
+            <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:0ms]" />
+            <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:150ms]" />
+            <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:300ms]" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const inputForm = (
+    <form
+      onSubmit={handleSend}
+      className="border-t border-neutral-200 bg-white px-4 py-3"
+    >
+      <div className="mx-auto flex max-w-2xl items-end gap-2">
+        <textarea
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          disabled={inputDisabled}
+          placeholder={inputPlaceholder}
+          rows={2}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSend(e);
+            }
+          }}
+          className="flex-1 resize-none rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500 disabled:bg-neutral-100 disabled:text-neutral-500"
+        />
+        <MicButton
+          sessionId={sessionId}
+          participantId={participantId}
+          disabled={inputDisabled}
+          onTranscribed={() => {
+            /* Reply will arrive over SSE; nothing to do here. */
+          }}
+        />
+        <button
+          type="submit"
+          disabled={inputDisabled || !draft.trim()}
+          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+        >
+          Send
+        </button>
+      </div>
+      {error && (
+        <div className="mx-auto mt-2 max-w-2xl text-xs text-red-600">
+          {error}
+        </div>
+      )}
+    </form>
+  );
+
+  const isSplit = sidePanel?.layout === "split";
+
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between border-b border-neutral-200 bg-white/80 backdrop-blur px-6 py-3">
@@ -234,76 +311,38 @@ export function Chat({ sessionId, participantId, displayName, onResetIdentity }:
         </button>
       </header>
 
-      <div className="relative flex flex-1 overflow-hidden">
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-8">
-          <div className="mx-auto max-w-2xl space-y-5">
-            {messages.map((m) => (
-              <MessageBubble
-                key={m.id}
-                message={m}
-                sessionId={sessionId}
-                participantId={participantId}
-              />
-            ))}
-            {typing && (
-              <div className="flex items-center gap-1.5 px-2">
-                <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:0ms]" />
-                <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:150ms]" />
-                <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:300ms]" />
-              </div>
-            )}
-          </div>
-        </div>
-        {sidePanel && (
-          <SidePanel
+      {isSplit && sidePanel ? (
+        // Split layout: document permanently on the left, chat column
+        // (messages + input) on the right. Both columns scroll
+        // independently. Used by document_revision so the participant
+        // never loses sight of the doc they're reacting to.
+        <div className="flex flex-1 overflow-hidden">
+          <DocumentPanel
             title={sidePanel.title}
             contentMd={sidePanel.content_md}
           />
-        )}
-      </div>
-
-      <form
-        onSubmit={handleSend}
-        className="border-t border-neutral-200 bg-white px-4 py-3"
-      >
-        <div className="mx-auto flex max-w-2xl items-end gap-2">
-          <textarea
-            ref={inputRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            disabled={inputDisabled}
-            placeholder={inputPlaceholder}
-            rows={2}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend(e);
-              }
-            }}
-            className="flex-1 resize-none rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500 disabled:bg-neutral-100 disabled:text-neutral-500"
-          />
-          <MicButton
-            sessionId={sessionId}
-            participantId={participantId}
-            disabled={inputDisabled}
-            onTranscribed={() => {
-              /* Reply will arrive over SSE; nothing to do here. */
-            }}
-          />
-          <button
-            type="submit"
-            disabled={inputDisabled || !draft.trim()}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
-          >
-            Send
-          </button>
-        </div>
-        {error && (
-          <div className="mx-auto mt-2 max-w-2xl text-xs text-red-600">
-            {error}
+          <div className="flex flex-1 flex-col overflow-hidden">
+            {messagesScroll}
+            {inputForm}
           </div>
-        )}
-      </form>
+        </div>
+      ) : (
+        // Drawer layout (default): chat fills the viewport with the input
+        // bar spanning the full width. Optional collapsible side panel
+        // overlays from the right.
+        <>
+          <div className="relative flex flex-1 overflow-hidden">
+            {messagesScroll}
+            {sidePanel && (
+              <SidePanel
+                title={sidePanel.title}
+                contentMd={sidePanel.content_md}
+              />
+            )}
+          </div>
+          {inputForm}
+        </>
+      )}
     </div>
   );
 }

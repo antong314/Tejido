@@ -77,15 +77,28 @@ export function deriveInitialMessages(state: StateResponse): ChatMessage[] {
   // 2. If we're mid-flow, reconstruct the active prompt.
   switch (state.phase) {
     case "awaiting_consent": {
-      // Mirrors WELCOME_TEMPLATE in src/circle/controller/consent.py.
-      // Kept on the frontend (not persisted) because it's surface UX,
-      // not durable conversation content.
-      const welcome =
-        `Welcome, ${state.participant_name}.\n\n` +
-        `We're going to spend the next 10 minutes or so thinking together about a question your group is exploring. This is a private conversation — only you will see what we say here, and nothing leaves this chat without your explicit permission at the end.\n\n` +
-        `The question is:\n\n` +
-        `<b>${state.question}</b>\n\n` +
-        `You can type, or send voice messages — whichever feels easier. There's no right answer and nothing to prepare. When you're ready, tap below and we'll begin.`;
+      // Mirrors WELCOME_TEMPLATE in src/circle/controller/consent.py for
+      // the default case. For the split layout (document_revision on web),
+      // we point at the document panel instead of pasting state.question
+      // — the doc lives in `state.question` for the LLM but is also
+      // already on screen, so quoting it here is duplicative. Telegram
+      // never reaches this branch (it renders the welcome server-side)
+      // and continues to paste the full question, which is correct since
+      // Telegram has no side panel.
+      const splitDoc = state.workflow_ui?.side_panel?.layout === "split"
+        ? state.workflow_ui.side_panel
+        : null;
+
+      const welcome = splitDoc
+        ? `Welcome, ${state.participant_name}.\n\n` +
+          `We're going to spend the next 10 minutes or so talking about <b>${splitDoc.title}</b>, shown on the left. This is a private conversation — only you will see what we say here, and nothing leaves this chat without your explicit permission at the end.\n\n` +
+          `Take a moment to read through it. You can type, or send voice messages — whichever feels easier. When you're ready, tap below and we'll begin.`
+        : `Welcome, ${state.participant_name}.\n\n` +
+          `We're going to spend the next 10 minutes or so thinking together about a question your group is exploring. This is a private conversation — only you will see what we say here, and nothing leaves this chat without your explicit permission at the end.\n\n` +
+          `The question is:\n\n` +
+          `<b>${state.question}</b>\n\n` +
+          `You can type, or send voice messages — whichever feels easier. There's no right answer and nothing to prepare. When you're ready, tap below and we'll begin.`;
+
       messages.push({
         id: nextId(),
         role: "assistant",

@@ -62,7 +62,7 @@ from ..runtime import BotContext
 from ..state import Phase
 from ..storage import load_participant
 from ..whisper_client import TranscriptionError, make_temp_audio
-from ..workflows import get_workflow_ui
+from ..workflows import build_welcome_question, get_workflow_ui
 from .dispatch import InvalidCallbackError, dispatch_callback
 from .render_action import action_to_json
 from .sse import SSEHub
@@ -195,12 +195,20 @@ def _suffix_for_audio(filename: str | None, content_type: str | None) -> str:
 
 
 def _state_for_response(raw: dict, context: BotContext) -> dict:
-    """Pick a stable subset of the on-disk JSON, plus workflow UI hints."""
+    """Pick a stable subset of the on-disk JSON, plus workflow UI hints.
+
+    `question` is computed live (NOT taken from the persisted state) so
+    the welcome message reflects the latest workflow_data and uses the
+    leaner participant-facing form (no facilitator-only sub-questions
+    or walk-through scaffolding). The persisted `state.question` field
+    on disk still holds the original LLM-facing question_block from
+    creation time, used by the admin participant-detail view.
+    """
     return {
         "participant_id": str(raw.get("participant_id", "")),
         "participant_name": str(raw.get("participant_name", "")),
         "session_id": str(raw.get("session_id", "")),
-        "question": str(raw.get("question", "")),
+        "question": build_welcome_question(context.session),
         "phase": str(raw.get("phase", "")),
         "transcript": list(raw.get("transcript", [])),
         "extracted_points": list(raw.get("extracted_points", [])),
