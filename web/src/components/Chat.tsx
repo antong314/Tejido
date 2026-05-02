@@ -23,6 +23,7 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [bootstrapped, setBootstrapped] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // Bootstrap from server state.
   useEffect(() => {
@@ -189,6 +190,22 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
     phase === "awaiting_consent" ||
     phase === "not_started";
 
+  // Auto-focus the textarea any time it transitions to enabled — first
+  // arrival in `in_conversation`, return after permissions, post-send
+  // when `pending` clears, etc. Lets the participant just keep typing
+  // without re-clicking after each send. Skipped while the textarea is
+  // disabled (focusing a disabled field is a no-op anyway).
+  useEffect(() => {
+    if (!inputDisabled) {
+      // Defer to next paint so we don't fight any concurrent re-render
+      // that hasn't finished mounting/enabling the element yet.
+      const id = window.requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
+      return () => window.cancelAnimationFrame(id);
+    }
+  }, [inputDisabled]);
+
   const inputPlaceholder = (() => {
     if (phase === "complete") return "Session complete.";
     if (phase === "in_permissions" || phase === "in_addition_permissions")
@@ -238,6 +255,7 @@ export function Chat({ participantId, displayName, onResetIdentity }: Props) {
       >
         <div className="mx-auto flex max-w-2xl items-end gap-2">
           <textarea
+            ref={inputRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             disabled={inputDisabled}
