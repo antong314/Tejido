@@ -3,6 +3,8 @@ import { NameEntry } from "./components/NameEntry";
 import { Chat } from "./components/Chat";
 import { EditSession } from "./admin/EditSession";
 import { NewSession } from "./admin/NewSession";
+import { ContextEdit } from "./admin/ContextEdit";
+import { Contexts } from "./admin/Contexts";
 import { ParticipantDetail } from "./admin/ParticipantDetail";
 import { SessionList } from "./admin/SessionList";
 import { WorkflowTypes } from "./admin/WorkflowTypes";
@@ -60,6 +62,12 @@ export default function App() {
       document.title = "Tejido — workflows";
     else if (route.name === "admin_edit_workflow")
       document.title = `Tejido — workflow — ${route.workflowType}`;
+    else if (route.name === "admin_contexts")
+      document.title = "Tejido — contexts";
+    else if (route.name === "admin_new_context")
+      document.title = "Tejido — new context";
+    else if (route.name === "admin_edit_context")
+      document.title = `Tejido — context — ${route.contextId}`;
     else document.title = "Tejido";
   }, [route]);
 
@@ -77,6 +85,10 @@ export default function App() {
   if (route.name === "admin_workflows") return <WorkflowTypes />;
   if (route.name === "admin_edit_workflow")
     return <WorkflowTypeEdit workflowType={route.workflowType} />;
+  if (route.name === "admin_contexts") return <Contexts />;
+  if (route.name === "admin_new_context") return <ContextEdit contextId={null} />;
+  if (route.name === "admin_edit_context")
+    return <ContextEdit contextId={route.contextId} />;
   if (route.name === "session")
     return <ParticipantSession sessionId={route.sessionId} />;
   return <Welcome />;

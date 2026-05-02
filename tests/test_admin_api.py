@@ -35,12 +35,15 @@ def _build_client(
     sessions_dir.mkdir(parents=True)
     workflows_dir = root / "config" / "workflows"
     workflows_dir.mkdir(parents=True)
+    contexts_dir = root / "config" / "contexts"
+    contexts_dir.mkdir(parents=True)
 
     secrets = Secrets(anthropic_api_key="t", telegram_bot_token="t")
     app_config = AppConfig(
         secrets=secrets,
         sessions_dir=sessions_dir,
         workflows_dir=workflows_dir,
+        contexts_dir=contexts_dir,
         data_dir_base=root / "data",
         syntheses_dir=root / "syntheses",
         proposals_dir=root / "proposals",
@@ -631,6 +634,95 @@ class FacilitatorPromptDepthTests(unittest.TestCase):
             question_block="Q?", facilitation_depth="forever"
         )
         self.assertIn(DEPTH_BLOCKS["medium"], out)
+
+
+class ContextLibraryTests(unittest.TestCase):
+    """The Context Library REST surface. A new "context" is a free-form
+    blob (id, name, text); sessions reference one by id via
+    common.community_context_id."""
+
+    def test_list_empty_when_nothing_saved(self) -> None:
+        client, _ = _build_client(self)
+        r = client.get("/api/admin/contexts")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), [])
+
+    def test_create_get_update_delete_round_trip(self) -> None:
+        client, _ = _build_client(self)
+        # Create
+        r = client.post(
+            "/api/admin/contexts",
+            json={
+                "id": "our_values",
+                "name": "Our values",
+                "text": "We value participation, transparency, kindness.",
+            },
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        # Get
+        r = client.get("/api/admin/contexts/our_values")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["name"], "Our values")
+        # Patch (text only — name preserved)
+        r = client.patch(
+            "/api/admin/contexts/our_values",
+            json={"text": "We value participation, transparency, and kindness."},
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("and kindness", r.json()["text"])
+        self.assertEqual(r.json()["name"], "Our values")
+        # Delete (idempotent: second call 404s)
+        r = client.delete("/api/admin/contexts/our_values")
+        self.assertEqual(r.status_code, 200)
+        r2 = client.delete("/api/admin/contexts/our_values")
+        self.assertEqual(r2.status_code, 404)
+
+    def test_create_409_on_dupe_id(self) -> None:
+        client, _ = _build_client(self)
+        for code in (200, 409):
+            r = client.post(
+                "/api/admin/contexts",
+                json={"id": "dupe", "name": "x", "text": "y"},
+            )
+            self.assertEqual(r.status_code, code, r.text)
+
+    def test_create_400_on_invalid_id(self) -> None:
+        client, _ = _build_client(self)
+        r = client.post(
+            "/api/admin/contexts",
+            json={"id": "Has Spaces", "name": "x", "text": "y"},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_create_400_on_empty_text(self) -> None:
+        client, _ = _build_client(self)
+        r = client.post(
+            "/api/admin/contexts",
+            json={"id": "blank", "name": "x", "text": "   "},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_session_referencing_deleted_context_resolves_empty(self) -> None:
+        # Permissive resolver: a session whose community_context_id points
+        # at a deleted context falls back to "" (no community context),
+        # which is a valid runtime state. We confirm this end-to-end via
+        # the resolver helper.
+        from circle.contexts import resolve_text
+
+        client, app_config = _build_client(self)
+        client.post(
+            "/api/admin/contexts",
+            json={"id": "ephemeral", "name": "x", "text": "we value testing"},
+        )
+        self.assertEqual(
+            resolve_text("ephemeral", app_config.contexts_dir),
+            "we value testing",
+        )
+        client.delete("/api/admin/contexts/ephemeral")
+        self.assertEqual(
+            resolve_text("ephemeral", app_config.contexts_dir),
+            "",
+        )
 
 
 if __name__ == "__main__":

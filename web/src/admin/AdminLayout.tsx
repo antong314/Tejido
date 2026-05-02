@@ -24,6 +24,7 @@ export function AdminLayout({ children, title }: Props) {
           <nav className="flex items-center gap-4 text-xs">
             <NavLink href="/admin">Sessions</NavLink>
             <NavLink href="/admin/workflows">Workflows</NavLink>
+            <NavLink href="/admin/contexts">Contexts</NavLink>
           </nav>
           {title && (
             <span className="text-sm text-neutral-600">{title}</span>

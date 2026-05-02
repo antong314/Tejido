@@ -78,7 +78,7 @@ async def run_revise(session: Session, app_config: AppConfig) -> Path:
     prompt = render_revise_prompt(
         original_document=document,
         transcripts=transcripts_block,
-        community_context=get_community_context(session),
+        community_context=get_community_context(session, app_config.contexts_dir),
         template=template,
     )
 

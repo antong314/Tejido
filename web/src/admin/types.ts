@@ -44,6 +44,16 @@ export interface CommonSettings {
   synthesis_model?: string;
   language?: string;
   facilitation_depth?: FacilitationDepth;
+  // Reference into the Context Library (see /api/admin/contexts). Empty =
+  // no community context attached. The synthesis/proposal/revise prompts
+  // already handle empty context gracefully.
+  community_context_id?: string;
+}
+
+export interface Context {
+  id: string;
+  name: string;
+  text: string;
 }
 
 export interface TelegramStatus {

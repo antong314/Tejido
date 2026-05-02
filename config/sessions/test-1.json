@@ -15,7 +15,6 @@
   },
   "workflow_data": {
     "question": "What is your favorite type of coffee drink? Is it espresso? Pour over? French press? Drip? Or some other? Why? ",
-    "context": "",
-    "community_context": ""
+    "context": ""
   }
 }

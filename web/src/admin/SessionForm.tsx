@@ -1,8 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ApiError } from "../api";
 import { navigate } from "../router";
+import { listContexts } from "./api";
 import type {
   AdminSession,
   CommonSettings,
+  Context,
   FacilitationDepth,
   FieldSchema,
   WorkflowSchema,
@@ -82,6 +85,33 @@ export function SessionForm({
   const [value, setValue] = useState<SessionFormValue>(initial);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+
+  // Context Library — fetched once on mount. If the call fails we still
+  // let the form render (the dropdown just shows "(none)"; the admin can
+  // still save the session and add a context later).
+  const [contexts, setContexts] = useState<Context[] | null>(null);
+  const [contextsError, setContextsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await listContexts();
+        if (!cancelled) setContexts(r);
+      } catch (e) {
+        if (cancelled) return;
+        setContextsError(
+          e instanceof ApiError
+            ? e.message
+            : "Couldn't load contexts. You can still save without one.",
+        );
+        setContexts([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const currentDepth: FacilitationDepth =
     (value.common.facilitation_depth as FacilitationDepth | undefined) ??
@@ -236,6 +266,45 @@ export function SessionForm({
             Used for the post-conversation analysis (synthesis, proposal, or
             revise). Defaults to Opus since these runs care about depth more
             than latency.
+          </Hint>
+        </Field>
+
+        <Field label="Community context">
+          <div className="flex items-center gap-2">
+            <select
+              value={value.common.community_context_id ?? ""}
+              onChange={(e) =>
+                setCommon(
+                  "community_context_id",
+                  e.target.value || undefined,
+                )
+              }
+              disabled={submitting || contexts === null}
+              className={inputClass(false)}
+            >
+              <option value="">— None (no community context) —</option>
+              {(contexts ?? []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => navigate("/admin/contexts")}
+              className="shrink-0 rounded-md border border-neutral-300 bg-white px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-50"
+            >
+              Manage
+            </button>
+          </div>
+          {contextsError && (
+            <p className="mt-1 text-xs text-amber-700">{contextsError}</p>
+          )}
+          <Hint>
+            Reusable community-context blob (shared values, prior decisions,
+            named principles). Used by the synthesis / proposal / revise
+            output processors to ground their output in your community.
+            Optional — leave as "None" if this session doesn't need it.
           </Hint>
         </Field>
 
@@ -499,6 +568,7 @@ export function emptyValueForSchema(
       facilitator_model: FACILITATOR_MODEL_OPTIONS[0],
       synthesis_model: SYNTHESIS_MODEL_OPTIONS[0],
       facilitation_depth: "medium",
+      community_context_id: "",
     },
     workflow_data,
   };

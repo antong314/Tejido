@@ -96,7 +96,6 @@ class WorkflowDataValidationTests(unittest.TestCase):
                 "reference_document": "## Why we exist\n\n…",
                 "framing": "We're working on v2.",
                 "sub_questions": ["Like?", "Don't like?", "Missing?"],
-                "community_context": "We value X, Y, Z.",
             },
         )
 
@@ -218,19 +217,33 @@ class PerWorkflowExtractorTests(unittest.TestCase):
         )
         self.assertEqual(get_context(s2), "Some background.")
 
-    def test_get_community_context_present_in_all(self) -> None:
-        for type_name, data_extra in [
-            ("open_discussion", {"question": "Q?"}),
-            ("decision_drafting", {"question": "Q?"}),
-            (
-                "document_revision",
-                {"reference_document": "doc"},
-            ),
-        ]:
-            s = self._build(
-                type_name, {**data_extra, "community_context": "We value X."}
+    def test_get_community_context_resolves_via_context_library(self) -> None:
+        # community_context now lives on common.community_context_id and
+        # resolves via the Context Library — not in workflow_data anymore.
+        # An empty id resolves to "" (no context attached, valid state).
+        import tempfile
+        from pathlib import Path
+
+        from circle.contexts import Context, save_context
+
+        s = self._build("open_discussion", {"question": "Q?"})
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            # No context referenced → empty string.
+            self.assertEqual(get_community_context(s, tmp_path), "")
+            # Save a context, point the session at it, resolve it.
+            save_context(
+                Context(id="our_values", name="Our values", text="We value X."),
+                tmp_path,
             )
-            self.assertEqual(get_community_context(s), "We value X.")
+            s2 = new_session(
+                id="ctx_session",
+                title="x",
+                workflow_type="open_discussion",
+                common=CommonSettings(community_context_id="our_values"),
+                workflow_data={"question": "Q?"},
+            )
+            self.assertEqual(get_community_context(s2, tmp_path), "We value X.")
 
     def test_synthesis_question_matches_question_block(self) -> None:
         # For now they're the same; this test will fail loudly if we
@@ -284,11 +297,13 @@ class SessionDataclassTests(unittest.TestCase):
             id="round_trip",
             title="Round trip",
             workflow_type="open_discussion",
-            common=CommonSettings(facilitation_depth="deep"),
+            common=CommonSettings(
+                facilitation_depth="deep",
+                community_context_id="some_context",
+            ),
             workflow_data={
                 "question": "Q?",
                 "context": "ctx",
-                "community_context": "cc",
             },
         )
         d = s.to_dict()

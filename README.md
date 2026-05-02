@@ -67,7 +67,7 @@ people to speak up.
 You'll spend most of your time in the admin UI at `/admin`. Here's the
 mental model and the workflow.
 
-### The three concepts
+### The four concepts
 
 **Workflow types** are the three kinds of conversation Tejido supports.
 You don't create them — they're built in — but you can edit how each
@@ -95,6 +95,15 @@ sub-questions, get back a participant URL, share it. Each session has its
 own data and its own output files. You can have many sessions running at
 once — each participant only ever sees the URL they were given.
 
+**Contexts** (the **Context Library** in the top nav) are reusable
+community-grounding blobs — shared values, prior decisions, named
+principles, anything the synthesis output should anchor itself in. One
+context per community is typical; the same context attaches to every
+session you run for that community via the dropdown on the session form.
+Optional — sessions without a context still work, the synthesis just
+loses that grounding. Context is purely about WHO the community is, so
+it's reusable across all three workflow types.
+
 **Participants** join a session by visiting its URL and entering a
 display name. There's no signup, no password, no account. Their
 conversation is private — you (the admin) cannot see it while it's
@@ -104,14 +113,20 @@ happening. Each participant stays anonymous to other participants.
 
 **Before the meeting (a day or a week before).**
 
-1. Open `/admin`, click **+ New workflow**, pick a workflow type.
-2. Fill in the form: a short id (used in URLs), a title (for your own
+1. **First time for this community?** Open **Contexts** in the top nav,
+   create a context for them — a paragraph or two about their shared
+   values, prior decisions, named principles. You'll reuse this for
+   every session you run for that community. Skip this if you don't
+   have anything community-specific to ground the synthesis in.
+2. Open `/admin`, click **+ New workflow**, pick a workflow type.
+3. Fill in the form: a short id (used in URLs), a title (for your own
    reference), and the workflow-specific data (the question, or the
    document you want revised).
-3. Set the conversation depth — minimal (2–3 min), medium (5–10 min),
+4. Pick the **community context** from the dropdown (or leave as "None").
+5. Set the conversation depth — minimal (2–3 min), medium (5–10 min),
    or deep (10–20 min). This drives how patiently the AI probes.
-4. Save. You'll land on the session edit page.
-5. Copy the **Participant URL** (the box at the top) and share it with
+6. Save. You'll land on the session edit page.
+7. Copy the **Participant URL** (the box at the top) and share it with
    the group however you usually communicate — email, Signal, whatever.
    They click the link, enter their name, and they're in.
 
@@ -180,10 +195,11 @@ of these as your community's preferences, not per-session knobs.
 - **Don't delete a session you ran the synthesis on** unless you're sure
   — the data dir at `data/<session_id>/` stays on disk so you can re-run
   later, but if you also delete that, the conversations are gone.
-- **Sessions and workflow customizations are versioned in git.** They
-  live as JSON under `config/sessions/` and `config/workflows/`. Commit
-  them if multiple admins want to share a setup; gitignore individual
-  files if they contain community-sensitive content.
+- **Sessions, contexts, and workflow customizations are versioned in
+  git.** They live as JSON under `config/sessions/`,
+  `config/contexts/`, and `config/workflows/`. Commit them if multiple
+  admins want to share a setup; gitignore individual files if they
+  contain community-sensitive content.
 
 ## Architecture
 
@@ -204,7 +220,9 @@ Storage is JSON files on disk:
 
 - `config/sessions/<id>.json` — one per session. Holds the workflow
   type, the participant-facing data (question / document / sub-
-  questions), and admin settings (models, depth).
+  questions), and admin settings (models, depth, context reference).
+- `config/contexts/<id>.json` — one per Context Library entry. Reusable
+  community-grounding text that sessions reference by id.
 - `config/workflows/<type>.json` — optional admin-edited overrides for
   the three big prompt fragments per workflow type. Only created when
   you actually edit them; absence means "use defaults."
@@ -307,8 +325,8 @@ python3 -m unittest discover -s tests -v
 ```
 
 Covers state-machine transitions, the synthesis permission filter,
-workflow validation, session/workflow-override/telegram persistence,
-and the admin REST surface. ~155 tests.
+workflow validation, session/workflow-override/context/telegram
+persistence, and the admin REST surface. ~160 tests.
 
 ## Privacy
 

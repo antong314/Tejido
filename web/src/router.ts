@@ -14,6 +14,9 @@ export type Route =
   | { name: "admin_participant"; sessionId: string; participantId: string }
   | { name: "admin_workflows" }
   | { name: "admin_edit_workflow"; workflowType: string }
+  | { name: "admin_contexts" }
+  | { name: "admin_new_context" }
+  | { name: "admin_edit_context"; contextId: string }
   | { name: "welcome" };
 
 const PATTERNS: Array<{ test: RegExp; build: (m: RegExpExecArray) => Route }> = [
@@ -49,6 +52,19 @@ const PATTERNS: Array<{ test: RegExp; build: (m: RegExpExecArray) => Route }> = 
   {
     test: /^\/admin\/workflows\/([a-z0-9_]+)\/?$/,
     build: (m) => ({ name: "admin_edit_workflow", workflowType: m[1] }),
+  },
+  // Context Library: /new BEFORE /:id (else "new" matches as an id).
+  {
+    test: /^\/admin\/contexts\/?$/,
+    build: () => ({ name: "admin_contexts" }),
+  },
+  {
+    test: /^\/admin\/contexts\/new\/?$/,
+    build: () => ({ name: "admin_new_context" }),
+  },
+  {
+    test: /^\/admin\/contexts\/([a-z0-9][a-z0-9_-]*)\/?$/,
+    build: (m) => ({ name: "admin_edit_context", contextId: m[1] }),
   },
 ];
 

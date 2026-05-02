@@ -65,7 +65,7 @@ async def run_proposal(session: Session, app_config: AppConfig) -> Path:
     prompt = render_proposal_prompt(
         question=get_synthesis_question(session),
         transcripts=transcripts_block,
-        community_context=get_community_context(session),
+        community_context=get_community_context(session, app_config.contexts_dir),
         template=template,
     )
 

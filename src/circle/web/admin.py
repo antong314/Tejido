@@ -61,6 +61,17 @@ from ..storage import (
     load_participant,
     read_index,
 )
+from ..contexts import (
+    Context,
+    ContextError,
+    ContextFileError,
+    InvalidContextIdError,
+    context_path,
+    delete_context,
+    list_contexts,
+    load_context,
+    save_context,
+)
 from ..prompts import FACILITATOR_MECHANICS
 from ..workflow_overrides import (
     WorkflowOverrides,
@@ -223,6 +234,25 @@ class ParticipantDetail(BaseModel):
     transcript: list[dict]
     extracted_points: list[dict]
     additions: list[dict]
+
+
+class ContextResponse(BaseModel):
+    id: str
+    name: str
+    text: str
+
+
+class CreateContextRequest(BaseModel):
+    id: str = Field(..., description="kebab/snake_case slug.")
+    name: str
+    text: str
+
+
+class UpdateContextRequest(BaseModel):
+    """Partial update — id is immutable; pass any subset of the rest."""
+
+    name: str | None = None
+    text: str | None = None
 
 
 class TelegramStatusResponse(BaseModel):
@@ -406,6 +436,128 @@ def _build_router(
         save_overrides(merged, registry.app_config.workflows_dir)
         logger.info("admin updated workflow_type=%s overrides", workflow_type)
         return _workflow_type_response(workflow_type)
+
+    # ------------------------------------------------------------------ contexts
+    #
+    # Context Library: reusable community-context blobs. Sessions reference
+    # one by id via common.community_context_id. Deleting a context that's
+    # currently referenced is allowed — the resolver silently falls back to
+    # empty (no community context), which is a valid session state.
+
+    @router.get("/contexts", response_model=list[ContextResponse])
+    async def list_all_contexts() -> list[ContextResponse]:
+        return [
+            ContextResponse(**c.to_dict())
+            for c in list_contexts(registry.app_config.contexts_dir)
+        ]
+
+    @router.post(
+        "/contexts",
+        response_model=ContextResponse,
+        responses={
+            400: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
+        },
+    )
+    async def create_context(body: CreateContextRequest) -> ContextResponse:
+        if context_path(registry.app_config.contexts_dir, body.id).exists():
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "context_exists",
+                    "error": f"A context with id {body.id!r} already exists.",
+                },
+            )
+        try:
+            context = Context(
+                id=body.id,
+                name=body.name,
+                text=body.text,
+            )
+        except (InvalidContextIdError, ContextError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "invalid_context", "error": str(exc)},
+            )
+        save_context(context, registry.app_config.contexts_dir)
+        logger.info("admin created context id=%s", context.id)
+        return ContextResponse(**context.to_dict())
+
+    @router.get(
+        "/contexts/{context_id}",
+        response_model=ContextResponse,
+        responses={404: {"model": ErrorResponse}},
+    )
+    async def get_context_detail(
+        context_id: Annotated[str, PathParam(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")],
+    ) -> ContextResponse:
+        try:
+            context = load_context(context_id, registry.app_config.contexts_dir)
+        except ContextFileError:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "context_not_found",
+                    "error": f"No context {context_id!r}",
+                },
+            )
+        return ContextResponse(**context.to_dict())
+
+    @router.patch(
+        "/contexts/{context_id}",
+        response_model=ContextResponse,
+        responses={
+            400: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+        },
+    )
+    async def patch_context(
+        context_id: Annotated[str, PathParam(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")],
+        body: UpdateContextRequest,
+    ) -> ContextResponse:
+        try:
+            current = load_context(context_id, registry.app_config.contexts_dir)
+        except ContextFileError:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "context_not_found",
+                    "error": f"No context {context_id!r}",
+                },
+            )
+        try:
+            updated = Context(
+                id=current.id,
+                name=body.name if body.name is not None else current.name,
+                text=body.text if body.text is not None else current.text,
+            )
+        except ContextError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "invalid_context", "error": str(exc)},
+            )
+        save_context(updated, registry.app_config.contexts_dir)
+        logger.info("admin updated context id=%s", updated.id)
+        return ContextResponse(**updated.to_dict())
+
+    @router.delete(
+        "/contexts/{context_id}",
+        responses={404: {"model": ErrorResponse}},
+    )
+    async def remove_context(
+        context_id: Annotated[str, PathParam(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")],
+    ) -> dict[str, Any]:
+        existed = delete_context(context_id, registry.app_config.contexts_dir)
+        if not existed:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "context_not_found",
+                    "error": f"No context {context_id!r}",
+                },
+            )
+        logger.info("admin deleted context id=%s", context_id)
+        return {"status": "ok"}
 
     # ------------------------------------------------------------------ sessions
 

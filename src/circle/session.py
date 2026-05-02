@@ -74,6 +74,11 @@ class CommonSettings:
     # facilitator's system prompt; not a hard cap. See
     # `circle.prompts.DEPTH_BLOCKS` for the exact text per setting.
     facilitation_depth: FacilitationDepth = "medium"
+    # Reference into the Context Library (circle.contexts). Empty = no
+    # community context attached. The synthesis/proposal/revise prompts
+    # already handle the empty case ("if empty, ignore"), so a session
+    # without a context is fully valid.
+    community_context_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -84,13 +89,14 @@ class CommonSettings:
         depth = str(raw.get("facilitation_depth", "medium")) or "medium"
         if depth not in _VALID_DEPTHS:
             depth = "medium"
-        # Unknown fields (e.g. legacy `ai_persona` / `ai_persona_id` from
-        # pre-Workflow-as-managed-object sessions) are silently ignored.
+        # Unknown fields (e.g. legacy `ai_persona_id` from pre-Workflow-
+        # as-managed-object sessions) are silently ignored.
         return cls(
             facilitator_model=str(raw.get("facilitator_model", "claude-sonnet-4-6")),
             synthesis_model=str(raw.get("synthesis_model", "claude-opus-4-6")),
             language=str(raw.get("language", "auto")) or "auto",
             facilitation_depth=depth,
+            community_context_id=str(raw.get("community_context_id", "")).strip(),
         )
 
 

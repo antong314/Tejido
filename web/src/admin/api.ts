@@ -3,6 +3,7 @@
 import { ApiError } from "../api";
 import type {
   AdminSession,
+  Context,
   OutputFileEntry,
   ParticipantDetail,
   ParticipantSummary,
@@ -147,6 +148,61 @@ export async function getParticipant(
   );
   if (!r.ok) throw await parseError(r);
   return r.json();
+}
+
+// ---------------------------------------------------------------------------
+// Context Library — reusable community-context blobs referenced by sessions
+// via common.community_context_id.
+
+export async function listContexts(): Promise<Context[]> {
+  const r = await fetch("/api/admin/contexts");
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export async function getContext(id: string): Promise<Context> {
+  const r = await fetch(`/api/admin/contexts/${id}`);
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export interface CreateContextInput {
+  id: string;
+  name: string;
+  text: string;
+}
+
+export async function createContext(input: CreateContextInput): Promise<Context> {
+  const r = await fetch("/api/admin/contexts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export interface UpdateContextInput {
+  name?: string;
+  text?: string;
+}
+
+export async function updateContext(
+  id: string,
+  input: UpdateContextInput,
+): Promise<Context> {
+  const r = await fetch(`/api/admin/contexts/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export async function deleteContext(id: string): Promise<void> {
+  const r = await fetch(`/api/admin/contexts/${id}`, { method: "DELETE" });
+  if (!r.ok) throw await parseError(r);
 }
 
 // ---------------------------------------------------------------------------

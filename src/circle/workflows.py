@@ -23,6 +23,8 @@ from .prompts import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from .session import Session
 
 
@@ -166,15 +168,6 @@ WORKFLOW_TYPES: dict[str, WorkflowSchema] = {
                     "Not shown to participants unless they ask."
                 ),
             ),
-            FieldSchema(
-                name="community_context",
-                label="Community context (optional)",
-                type="long_text",
-                description=(
-                    "Used by synthesis to ground output in your community's "
-                    "specific values, prior decisions, and named principles."
-                ),
-            ),
         ],
     ),
     "decision_drafting": WorkflowSchema(
@@ -202,11 +195,6 @@ WORKFLOW_TYPES: dict[str, WorkflowSchema] = {
             FieldSchema(
                 name="context",
                 label="Context for the AI (optional)",
-                type="long_text",
-            ),
-            FieldSchema(
-                name="community_context",
-                label="Community context (optional)",
                 type="long_text",
             ),
         ],
@@ -265,11 +253,6 @@ WORKFLOW_TYPES: dict[str, WorkflowSchema] = {
                 description=(
                     "The angles the facilitator covers with each participant."
                 ),
-            ),
-            FieldSchema(
-                name="community_context",
-                label="Community context (optional)",
-                type="long_text",
             ),
         ],
     ),
@@ -421,9 +404,18 @@ def get_context(session: "Session") -> str:
     return str(session.workflow_data.get("context", "")).strip()
 
 
-def get_community_context(session: "Session") -> str:
-    """Synthesis/proposal community grounding. Empty string if none."""
-    return str(session.workflow_data.get("community_context", "")).strip()
+def get_community_context(session: "Session", contexts_dir: "Path") -> str:
+    """Synthesis/proposal community grounding. Empty string if none.
+
+    Resolves the session's `common.community_context_id` against the
+    Context Library (see `circle.contexts`). Sessions with an empty
+    context id, or one that points at a deleted context file, return ""
+    — the synthesis/proposal/revise prompts handle empty context with
+    their existing "if empty, ignore" instructions.
+    """
+    from .contexts import resolve_text
+
+    return resolve_text(session.common.community_context_id, contexts_dir)
 
 
 def get_synthesis_question(session: "Session") -> str:
