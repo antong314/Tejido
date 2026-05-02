@@ -8,6 +8,7 @@ import type {
   ParticipantSummary,
   Persona,
   ProcessorName,
+  TelegramStatus,
   WorkflowSchema,
 } from "./types";
 
@@ -181,4 +182,25 @@ export async function updatePersona(
 export async function deletePersona(id: string): Promise<void> {
   const r = await fetch(`/api/admin/personas/${id}`, { method: "DELETE" });
   if (!r.ok) throw await parseError(r);
+}
+
+// ---------------------------------------------------------------------------
+// Telegram binding — single global setting, read/write via /admin/telegram.
+
+export async function getTelegramStatus(): Promise<TelegramStatus> {
+  const r = await fetch("/api/admin/telegram");
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export async function setTelegramBinding(
+  sessionId: string | null,
+): Promise<TelegramStatus> {
+  const r = await fetch("/api/admin/telegram", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+  if (!r.ok) throw await parseError(r);
+  return r.json();
 }

@@ -11,7 +11,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
@@ -22,7 +22,11 @@ from circle.registry import SessionRegistry  # noqa: E402
 from circle.web.app import create_app  # noqa: E402
 
 
-def _build_client(test: unittest.TestCase) -> tuple[TestClient, AppConfig]:
+def _build_client(
+    test: unittest.TestCase,
+    *,
+    telegram=None,
+) -> tuple[TestClient, AppConfig]:
     tmpdir = tempfile.TemporaryDirectory()
     test.addCleanup(tmpdir.cleanup)
     root = Path(tmpdir.name)
@@ -48,7 +52,7 @@ def _build_client(test: unittest.TestCase) -> tuple[TestClient, AppConfig]:
     app_config.revisions_dir.mkdir(parents=True, exist_ok=True)
 
     registry = SessionRegistry(app_config=app_config, whisper=MagicMock())
-    app = create_app(registry=registry)
+    app = create_app(registry=registry, telegram=telegram)
     return TestClient(app), app_config
 
 
@@ -469,6 +473,108 @@ class PersonasCRUDTests(unittest.TestCase):
             json={"id": "blanky", "name": "x", "prompt": "   "},
         )
         self.assertEqual(r.status_code, 400)
+
+
+class TelegramAdminTests(unittest.TestCase):
+    """REST surface around the Telegram binding.
+
+    Uses a stub TelegramManager (MagicMock) since the manager itself is
+    covered in test_telegram_manager.py — we just need to confirm the
+    REST routes call through correctly.
+    """
+
+    def _make_telegram_stub(self, bound: str | None = None) -> MagicMock:
+        from unittest.mock import AsyncMock
+
+        tm = MagicMock()
+        tm.bound_session_id = bound
+        tm.bind = AsyncMock()
+        tm.unbind_if_session = AsyncMock(return_value=False)
+        return tm
+
+    def test_get_status_when_telegram_unavailable(self) -> None:
+        # No telegram passed → admin endpoint reports available: false.
+        client, _ = _build_client(self, telegram=None)
+        r = client.get("/api/admin/telegram")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(
+            r.json(),
+            {"available": False, "bound_session_id": None},
+        )
+
+    def test_get_status_when_unbound(self) -> None:
+        tm = self._make_telegram_stub(bound=None)
+        client, _ = _build_client(self, telegram=tm)
+        r = client.get("/api/admin/telegram")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(
+            r.json(), {"available": True, "bound_session_id": None}
+        )
+
+    def test_get_status_when_bound(self) -> None:
+        tm = self._make_telegram_stub(bound="alpha")
+        client, _ = _build_client(self, telegram=tm)
+        r = client.get("/api/admin/telegram")
+        self.assertEqual(r.json()["bound_session_id"], "alpha")
+
+    def test_put_503_when_telegram_unavailable(self) -> None:
+        client, _ = _build_client(self, telegram=None)
+        r = client.put("/api/admin/telegram", json={"session_id": "alpha"})
+        self.assertEqual(r.status_code, 503)
+        self.assertEqual(r.json()["detail"]["code"], "telegram_not_available")
+
+    def test_put_calls_bind_with_session_id(self) -> None:
+        tm = self._make_telegram_stub(bound=None)
+
+        # bind() updates bound_session_id when called.
+        async def fake_bind(sid):
+            tm.bound_session_id = sid
+
+        tm.bind.side_effect = fake_bind
+        client, _ = _build_client(self, telegram=tm)
+        r = client.put("/api/admin/telegram", json={"session_id": "beta"})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["bound_session_id"], "beta")
+        tm.bind.assert_awaited_once_with("beta")
+
+    def test_put_with_null_session_unbinds(self) -> None:
+        tm = self._make_telegram_stub(bound="alpha")
+
+        async def fake_bind(sid):
+            tm.bound_session_id = sid
+
+        tm.bind.side_effect = fake_bind
+        client, _ = _build_client(self, telegram=tm)
+        r = client.put("/api/admin/telegram", json={"session_id": None})
+        self.assertEqual(r.status_code, 200, r.text)
+        tm.bind.assert_awaited_once_with(None)
+
+    def test_put_400_when_bind_raises(self) -> None:
+        from circle.telegram_manager import TelegramBindingError
+
+        tm = self._make_telegram_stub(bound=None)
+        tm.bind.side_effect = TelegramBindingError("session 'ghost' not found")
+        client, _ = _build_client(self, telegram=tm)
+        r = client.put("/api/admin/telegram", json={"session_id": "ghost"})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.json()["detail"]["code"], "telegram_bind_failed")
+
+    def test_delete_session_auto_unbinds_telegram(self) -> None:
+        tm = self._make_telegram_stub(bound="to_delete")
+        tm.unbind_if_session = AsyncMock(return_value=True)
+        client, _ = _build_client(self, telegram=tm)
+        client.post(
+            "/api/admin/sessions",
+            json={
+                "id": "to_delete",
+                "title": "x",
+                "workflow_type": "open_discussion",
+                "workflow_data": {"question": "Q?"},
+            },
+        )
+        r = client.delete("/api/admin/sessions/to_delete")
+        self.assertEqual(r.status_code, 200, r.text)
+        tm.unbind_if_session.assert_awaited_once_with("to_delete")
 
 
 class FacilitatorPromptDepthTests(unittest.TestCase):

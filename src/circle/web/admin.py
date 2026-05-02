@@ -28,7 +28,10 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..telegram_manager import TelegramManager
 
 from fastapi import (
     APIRouter,
@@ -220,6 +223,23 @@ class UpdatePersonaRequest(BaseModel):
     description: str | None = None
 
 
+class TelegramStatusResponse(BaseModel):
+    """Current state of the Telegram binding.
+
+    `available` is False in processes that don't run Telegram (e.g.
+    circle.web) — the UI should hide the binding card in that case.
+    """
+
+    available: bool
+    bound_session_id: str | None
+
+
+class TelegramBindRequest(BaseModel):
+    """Bind to a session, or unbind when session_id is null."""
+
+    session_id: str | None = None
+
+
 class ErrorResponse(BaseModel):
     code: str
     error: str
@@ -229,16 +249,83 @@ class ErrorResponse(BaseModel):
 # Mount.
 
 
-def mount(app: FastAPI, *, registry: SessionRegistry) -> None:
-    """Attach the admin REST endpoints to the given FastAPI app."""
-    router = _build_router(registry)
+def mount(
+    app: FastAPI,
+    *,
+    registry: SessionRegistry,
+    telegram: "TelegramManager | None" = None,
+) -> None:
+    """Attach the admin REST endpoints to the given FastAPI app.
+
+    `telegram` enables the GET/PUT /telegram binding endpoints. Pass
+    None for processes that don't run Telegram (e.g. circle.web), in
+    which case GET returns `available: false` and PUT returns 503.
+    """
+    router = _build_router(registry, telegram)
     app.include_router(router, prefix="/api/admin", tags=["admin"])
 
 
-def _build_router(registry: SessionRegistry) -> APIRouter:
+def _build_router(
+    registry: SessionRegistry,
+    telegram: "TelegramManager | None",
+) -> APIRouter:
     router = APIRouter()
 
     # ------------------------------------------------------------------ types
+
+    # ------------------------------------------------------------------ telegram
+
+    @router.get(
+        "/telegram", response_model=TelegramStatusResponse,
+    )
+    async def get_telegram_status() -> TelegramStatusResponse:
+        if telegram is None:
+            return TelegramStatusResponse(available=False, bound_session_id=None)
+        return TelegramStatusResponse(
+            available=True,
+            bound_session_id=telegram.bound_session_id,
+        )
+
+    @router.put(
+        "/telegram",
+        response_model=TelegramStatusResponse,
+        responses={
+            400: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+    )
+    async def put_telegram_binding(
+        body: TelegramBindRequest,
+    ) -> TelegramStatusResponse:
+        if telegram is None:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "code": "telegram_not_available",
+                    "error": (
+                        "This server process doesn't run Telegram. Start "
+                        "the combined entrypoint (`python -m circle.run`)."
+                    ),
+                },
+            )
+        sid = body.session_id
+        if sid is not None and not sid.strip():
+            sid = None
+        try:
+            from ..telegram_manager import TelegramBindingError
+
+            await telegram.bind(sid)
+        except TelegramBindingError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "telegram_bind_failed", "error": str(exc)},
+            )
+        return TelegramStatusResponse(
+            available=True,
+            bound_session_id=telegram.bound_session_id,
+        )
+
+    # ------------------------------------------------------------------ workflow types
 
     @router.get("/workflow-types", response_model=list[WorkflowTypeResponse])
     async def list_workflow_types() -> list[WorkflowTypeResponse]:
@@ -522,6 +609,11 @@ def _build_router(registry: SessionRegistry) -> APIRouter:
                 },
             )
         await registry.drop(session_id)
+        # If Telegram was bound to the deleted session, unbind it so the
+        # bot doesn't end up pointing at a session that no longer exists
+        # — that'd silently fail on the next message.
+        if telegram is not None:
+            await telegram.unbind_if_session(session_id)
         logger.info(
             "admin deleted session id=%s (data dir kept at data/%s/)",
             session_id,

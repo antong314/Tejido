@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../api";
 import { navigate } from "../router";
 import { AdminLayout } from "./AdminLayout";
+import { TelegramCard } from "./TelegramCard";
 import { listSessions, listWorkflowTypes } from "./api";
 import type { AdminSession, WorkflowSchema } from "./types";
 
@@ -9,6 +10,13 @@ export function SessionList() {
   const [sessions, setSessions] = useState<AdminSession[] | null>(null);
   const [types, setTypes] = useState<WorkflowSchema[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Tracked here (not just in TelegramCard) so we can put a 🤖 badge on
+  // the bound row in the table below.
+  const [boundTelegramId, setBoundTelegramId] = useState<string | null>(null);
+  const handleBindingChange = useCallback(
+    (id: string | null) => setBoundTelegramId(id),
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +46,13 @@ export function SessionList() {
         <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
           {error}
         </div>
+      )}
+
+      {sessions !== null && sessions.length > 0 && (
+        <TelegramCard
+          sessions={sessions}
+          onBindingChange={handleBindingChange}
+        />
       )}
 
       {sessions === null && !error && (
@@ -79,8 +94,18 @@ export function SessionList() {
                 return (
                   <tr key={s.id} className="hover:bg-neutral-50">
                     <td className="px-4 py-3">
-                      <div className="font-medium text-neutral-900">
-                        {s.title || s.id}
+                      <div className="flex items-center gap-2">
+                        <div className="font-medium text-neutral-900">
+                          {s.title || s.id}
+                        </div>
+                        {boundTelegramId === s.id && (
+                          <span
+                            title="Telegram bot is bound to this session"
+                            className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800"
+                          >
+                            🤖 Telegram
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-neutral-500">{s.id}</div>
                     </td>

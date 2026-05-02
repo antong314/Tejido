@@ -33,7 +33,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TYPE_CHECKING
 
 from fastapi import (
     FastAPI,
@@ -63,6 +63,9 @@ from ..state import Phase
 from ..storage import load_participant
 from ..whisper_client import TranscriptionError, make_temp_audio
 from ..workflows import build_welcome_question, get_workflow_ui
+
+if TYPE_CHECKING:
+    from ..telegram_manager import TelegramManager
 from .dispatch import InvalidCallbackError, dispatch_callback
 from .render_action import action_to_json
 from .sse import SSEHub
@@ -225,12 +228,21 @@ def _state_for_response(raw: dict, context: BotContext) -> dict:
 # App factory.
 
 
-def create_app(*, registry: SessionRegistry) -> FastAPI:
+def create_app(
+    *,
+    registry: SessionRegistry,
+    telegram: "TelegramManager | None" = None,
+) -> FastAPI:
     """Build a FastAPI app bound to a SessionRegistry.
 
     The registry is the source of per-session BotContexts; routes look up
     by session id from the URL. The SSEHub is owned by the app and
     lives for the process lifetime.
+
+    `telegram`, when provided, exposes the Telegram binding to the admin
+    REST endpoints (GET/PUT /api/admin/telegram). If None — e.g. when
+    running web-only via `circle.web` — the admin endpoints respond with
+    a "not available in this process" indicator.
     """
     app = FastAPI(
         title="Tejido — Web Adapter",
@@ -243,6 +255,7 @@ def create_app(*, registry: SessionRegistry) -> FastAPI:
     sse_hub = SSEHub()
     app.state.sse_hub = sse_hub
     app.state.registry = registry
+    app.state.telegram = telegram
 
     # ------------------------------------------------------------------ root
 
@@ -513,7 +526,7 @@ def create_app(*, registry: SessionRegistry) -> FastAPI:
     # tests that only exercise the participant-facing routes).
     from . import admin as _admin
 
-    _admin.mount(app, registry=registry)
+    _admin.mount(app, registry=registry, telegram=telegram)
 
     return app
 

@@ -1,16 +1,18 @@
 """Combined Telegram + Web entrypoint.
 
-Runs the FastAPI web server (multi-session) and optionally the Telegram
-poller (single-session, bound to whichever session you pass via
---telegram-session) in a single asyncio event loop. Both share one
-SessionRegistry — same BotContexts, same per-session locks, same data
-files. A participant could in principle have one tab open via web and
-another via Telegram talking to the same session — they'd just be
-treated as two different participants (different identity resolution).
+Runs the FastAPI web server (multi-session) and a TelegramManager that
+optionally binds the Telegram bot to one of those sessions. The binding
+is admin-controlled at runtime via /api/admin/telegram and persisted to
+`config/telegram.json` so it survives restarts.
+
+There used to be a `--telegram-session <id>` CLI flag that locked the
+binding for the lifetime of the process. It's gone — the admin UI is
+now the source of truth. To start the server with no Telegram, just
+make sure no binding is persisted (or unbind via the admin UI once and
+it stays unbound).
 
 Usage:
-    python -m circle.run                                   # web only
-    python -m circle.run --telegram-session bylaws_v2     # web + Telegram on bylaws_v2
+    python -m circle.run                  # web + admin-controlled telegram
 """
 
 from __future__ import annotations
@@ -21,11 +23,10 @@ import logging
 import sys
 
 import uvicorn
-from telegram.ext import ApplicationBuilder
 
 from .config import ConfigError, load_app_config
-from .handlers import commands, consent, conversation, permissions
 from .registry import SessionRegistry
+from .telegram_manager import TelegramManager
 from .web.app import create_app
 from .whisper_client import WhisperTranscriber
 
@@ -50,43 +51,27 @@ async def _run_combined(args: argparse.Namespace) -> None:
     )
     registry = SessionRegistry(app_config=app_config, whisper=whisper)
 
-    fastapi_app = create_app(registry=registry)
+    # The TelegramManager owns the python-telegram-bot Application
+    # lifecycle. We hand it to create_app so the admin REST endpoints
+    # can bind/unbind through it. Auto-resume reads the persisted
+    # binding (config/telegram.json) and starts polling if one exists.
+    telegram = TelegramManager(
+        registry=registry,
+        bot_token=app_config.secrets.telegram_bot_token,
+        state_path=app_config.sessions_dir.parent / "telegram.json",
+    )
+    await telegram.resume_persisted()
+
+    fastapi_app = create_app(registry=registry, telegram=telegram)
     uv_config = uvicorn.Config(
         fastapi_app, host=args.host, port=args.port, log_level="info"
     )
     uv_server = uvicorn.Server(uv_config)
 
-    tg_app = None
-    if args.telegram_session:
-        tg_context = await registry.get(args.telegram_session)
-        if tg_context is None:
-            print(
-                f"--telegram-session {args.telegram_session!r} not found in "
-                f"{app_config.sessions_dir}",
-                file=sys.stderr,
-            )
-            sys.exit(2)
-        tg_app = (
-            ApplicationBuilder()
-            .token(app_config.secrets.telegram_bot_token)
-            .build()
-        )
-        for handler in commands.build_handlers(tg_context):
-            tg_app.add_handler(handler)
-        for handler in consent.build_handlers(tg_context):
-            tg_app.add_handler(handler)
-        for handler in permissions.build_handlers(tg_context):
-            tg_app.add_handler(handler)
-        for handler in conversation.build_handlers(tg_context):
-            tg_app.add_handler(handler)
-        await tg_app.initialize()
-        await tg_app.start()
-        await tg_app.updater.start_polling()
-
     logger.info(
         "tejido starting | sessions=%s | telegram=%s | web=http://%s:%s/",
         registry.list_session_ids(),
-        args.telegram_session or "off",
+        telegram.bound_session_id or "off",
         args.host,
         args.port,
     )
@@ -95,28 +80,15 @@ async def _run_combined(args: argparse.Namespace) -> None:
         await uv_server.serve()
     finally:
         logger.info("shutting down...")
-        if tg_app is not None:
-            try:
-                await tg_app.updater.stop()
-                await tg_app.stop()
-                await tg_app.shutdown()
-            except Exception:
-                logger.exception("error shutting down telegram client")
+        await telegram.stop()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Run Tejido — multi-session web UI plus, optionally, the "
-            "Telegram bot bound to a single session."
+            "Run Tejido — multi-session web UI plus an admin-controlled "
+            "Telegram binding."
         )
-    )
-    parser.add_argument(
-        "--telegram-session",
-        default=None,
-        help=(
-            "Session id to bind the Telegram bot to. Omit to run web-only."
-        ),
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)

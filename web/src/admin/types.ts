@@ -41,6 +41,14 @@ export interface Persona {
   description: string;
 }
 
+export interface TelegramStatus {
+  // True when the running process owns a TelegramManager (i.e. it's
+  // `circle.run`, not `circle.web`). False = hide the binding card.
+  available: boolean;
+  // Session id Telegram is currently routing to, or null if unbound.
+  bound_session_id: string | null;
+}
+
 export interface WhisperSettings {
   model?: string;
   models_dir?: string;

@@ -15,3 +15,7 @@ venv/
 # forward — they're managed via the admin UI and the user has chosen to
 # version them. If a particular session contains community-sensitive
 # content, gitignore it explicitly here.
+
+# The Telegram binding is per-environment runtime state (which session
+# the bot is currently routing to), not config worth versioning.
+config/telegram.json
