@@ -246,8 +246,13 @@ def create_app(*, registry: SessionRegistry) -> FastAPI:
         return RedirectResponse(url="/admin", status_code=307)
 
     @app.get("/admin", include_in_schema=False)
-    async def admin_root() -> HTMLResponse:
-        # The React app handles /admin routing client-side.
+    @app.get("/admin/{rest:path}", include_in_schema=False)
+    async def admin_spa(rest: str = "") -> HTMLResponse:
+        # The React app handles /admin/* routing client-side, so any path
+        # under /admin returns the SPA's index.html and the bundle takes
+        # over from there. (rest is ignored — it's there to give FastAPI
+        # a path-converter to match.)
+        del rest
         index_path = _FRONTEND_DIST / "index.html"
         if index_path.exists():
             return FileResponse(index_path)

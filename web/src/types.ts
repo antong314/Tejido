@@ -28,7 +28,7 @@ export type ServerEvent =
   // produced — same field name as the on-disk transcript turn.
   | { type: "user_message"; text: string; via: "text" | "voice" };
 
-// REST: GET /api/p/{id}/state
+// REST: GET /api/s/{session_id}/p/{id}/state
 export interface StateResponse {
   participant_id: string;
   participant_name: string;
@@ -41,6 +41,13 @@ export interface StateResponse {
   status: string;
   started_at: string | null;
   completed_at: string | null;
+  workflow_type: string;
+  workflow_ui: {
+    side_panel?: {
+      title: string;
+      content_md: string;
+    };
+  };
 }
 
 export type Phase =

@@ -19,3 +19,50 @@ body {
   background: #fafafa;
   color: #1c1c1c;
 }
+
+/* Side panel + welcome card markdown styling. We don't use the Tailwind
+   Typography plugin to keep deps minimal; these rules cover the small
+   subset our markdown renderer emits (h1-h3, p, ul/ol, strong, em, code). */
+.prose-sm h1,
+.prose-sm h2,
+.prose-sm h3 {
+  font-weight: 600;
+  color: #1c1c1c;
+  line-height: 1.3;
+  margin-top: 1.25em;
+  margin-bottom: 0.5em;
+}
+.prose-sm h1 {
+  font-size: 1.25rem;
+}
+.prose-sm h2 {
+  font-size: 1.05rem;
+}
+.prose-sm h3 {
+  font-size: 0.95rem;
+}
+.prose-sm p {
+  margin: 0 0 0.75em;
+  line-height: 1.55;
+}
+.prose-sm ul,
+.prose-sm ol {
+  margin: 0 0 0.75em 1.25em;
+  padding: 0;
+  line-height: 1.55;
+}
+.prose-sm li {
+  margin: 0.15em 0;
+}
+.prose-sm strong {
+  color: #111;
+}
+.prose-sm code {
+  background: #f4f4f4;
+  border-radius: 3px;
+  padding: 0.1em 0.3em;
+  font-size: 0.9em;
+}
+.prose-sm > :first-child {
+  margin-top: 0;
+}

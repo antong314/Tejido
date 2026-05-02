@@ -1,0 +1,106 @@
+// REST client for /api/admin endpoints.
+
+import { ApiError } from "../api";
+import type {
+  AdminSession,
+  OutputFileEntry,
+  ProcessorName,
+  WorkflowSchema,
+} from "./types";
+
+async function parseError(r: Response): Promise<ApiError> {
+  let body: { detail?: { code?: string; error?: string } } | null = null;
+  try {
+    body = await r.json();
+  } catch {
+    /* not json */
+  }
+  const code = body?.detail?.code ?? "unknown";
+  const error = body?.detail?.error ?? r.statusText ?? "request failed";
+  return new ApiError(r.status, code, error);
+}
+
+export async function listWorkflowTypes(): Promise<WorkflowSchema[]> {
+  const r = await fetch("/api/admin/workflow-types");
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export async function listSessions(): Promise<AdminSession[]> {
+  const r = await fetch("/api/admin/sessions");
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export async function getSession(id: string): Promise<AdminSession> {
+  const r = await fetch(`/api/admin/sessions/${id}`);
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export interface CreateSessionInput {
+  id: string;
+  title: string;
+  workflow_type: string;
+  common?: AdminSession["common"];
+  whisper?: AdminSession["whisper"];
+  workflow_data?: AdminSession["workflow_data"];
+}
+
+export async function createSession(
+  input: CreateSessionInput,
+): Promise<AdminSession> {
+  const r = await fetch("/api/admin/sessions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export interface UpdateSessionInput {
+  title?: string;
+  common?: AdminSession["common"];
+  whisper?: AdminSession["whisper"];
+  workflow_data?: AdminSession["workflow_data"];
+}
+
+export async function updateSession(
+  id: string,
+  input: UpdateSessionInput,
+): Promise<AdminSession> {
+  const r = await fetch(`/api/admin/sessions/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export async function deleteSession(id: string): Promise<void> {
+  const r = await fetch(`/api/admin/sessions/${id}`, { method: "DELETE" });
+  if (!r.ok) throw await parseError(r);
+}
+
+export async function runProcessor(
+  id: string,
+  processor: ProcessorName,
+): Promise<{ status: string }> {
+  const r = await fetch(`/api/admin/sessions/${id}/run/${processor}`, {
+    method: "POST",
+  });
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export async function listOutputs(id: string): Promise<OutputFileEntry[]> {
+  const r = await fetch(`/api/admin/sessions/${id}/outputs`);
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export function outputUrl(id: string, filename: string): string {
+  return `/api/admin/sessions/${id}/outputs/${encodeURIComponent(filename)}`;
+}

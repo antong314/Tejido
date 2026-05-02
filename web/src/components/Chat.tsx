@@ -4,6 +4,7 @@ import { deriveInitialMessages } from "../derive_messages";
 import type { ChatMessage, ContentPart, Phase, ServerEvent } from "../types";
 import { ChoicePrompt } from "./ChoicePrompt";
 import { MicButton } from "./MicButton";
+import { SidePanel } from "./SidePanel";
 
 interface Props {
   sessionId: string;
@@ -18,6 +19,7 @@ const nextMsgId = () => `evt-${++_eventCounter}`;
 export function Chat({ sessionId, participantId, displayName, onResetIdentity }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [phase, setPhase] = useState<Phase>("not_started");
+  const [sidePanel, setSidePanel] = useState<{ title: string; content_md: string } | null>(null);
   const [typing, setTyping] = useState(false);
   const [pending, setPending] = useState(false);
   const [draft, setDraft] = useState("");
@@ -35,6 +37,7 @@ export function Chat({ sessionId, participantId, displayName, onResetIdentity }:
         if (cancelled) return;
         setMessages(deriveInitialMessages(s));
         setPhase(s.phase);
+        setSidePanel(s.workflow_ui?.side_panel ?? null);
         setBootstrapped(true);
       } catch (e) {
         if (cancelled) return;
@@ -231,24 +234,32 @@ export function Chat({ sessionId, participantId, displayName, onResetIdentity }:
         </button>
       </header>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-8">
-        <div className="mx-auto max-w-2xl space-y-5">
-          {messages.map((m) => (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              sessionId={sessionId}
-              participantId={participantId}
-            />
-          ))}
-          {typing && (
-            <div className="flex items-center gap-1.5 px-2">
-              <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:0ms]" />
-              <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:150ms]" />
-              <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:300ms]" />
-            </div>
-          )}
+      <div className="relative flex flex-1 overflow-hidden">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-8">
+          <div className="mx-auto max-w-2xl space-y-5">
+            {messages.map((m) => (
+              <MessageBubble
+                key={m.id}
+                message={m}
+                sessionId={sessionId}
+                participantId={participantId}
+              />
+            ))}
+            {typing && (
+              <div className="flex items-center gap-1.5 px-2">
+                <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:0ms]" />
+                <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:150ms]" />
+                <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:300ms]" />
+              </div>
+            )}
+          </div>
         </div>
+        {sidePanel && (
+          <SidePanel
+            title={sidePanel.title}
+            contentMd={sidePanel.content_md}
+          />
+        )}
       </div>
 
       <form
