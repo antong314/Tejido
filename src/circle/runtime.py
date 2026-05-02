@@ -18,7 +18,6 @@ from pathlib import Path
 
 from .anthropic_client import AnthropicClient
 from .config import AppConfig
-from .personas import resolve_persona_text
 from .prompts import render_facilitator_prompt
 from .session import Session
 from .state import ParticipantState, new_participant_state
@@ -28,7 +27,8 @@ from .storage import (
     save_participant,
 )
 from .whisper_client import WhisperTranscriber
-from .workflows import build_question_block, get_context, get_default_persona
+from .workflow_overrides import get_mechanics, get_task_framing
+from .workflows import build_question_block, get_context
 
 logger = logging.getLogger(__name__)
 
@@ -57,20 +57,22 @@ class BotContext:
     def facilitator_system_prompt(self) -> str:
         """Assemble the workflow-specific facilitator system prompt.
 
-        Persona + question_block + context + mechanics + depth pacing.
-        Recomputed on access so an admin edit to the session OR to the
-        referenced persona takes effect on the next LLM call without a
-        restart.
+        Task-framing + question_block + context + mechanics + depth pacing.
+        All four LLM-facing pieces are resolved live so an admin edit to
+        the session OR to the workflow-type overrides takes effect on the
+        next LLM call without a restart.
         """
-        persona_text = resolve_persona_text(
-            self.session.common.ai_persona_id,
-            self.app_config.personas_dir,
-            fallback=get_default_persona(self.session),
-        )
         return render_facilitator_prompt(
-            persona=persona_text,
+            task_framing=get_task_framing(
+                self.session.workflow_type,
+                self.app_config.workflows_dir,
+            ),
             question_block=build_question_block(self.session),
             context=get_context(self.session),
+            mechanics=get_mechanics(
+                self.session.workflow_type,
+                self.app_config.workflows_dir,
+            ),
             facilitation_depth=self.session.common.facilitation_depth,
         )
 

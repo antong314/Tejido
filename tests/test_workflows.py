@@ -28,7 +28,7 @@ from circle.workflows import (  # noqa: E402
     build_welcome_question,
     get_community_context,
     get_context,
-    get_persona,
+    get_default_task_framing,
     get_synthesis_question,
     get_workflow,
     get_workflow_ui,
@@ -58,11 +58,16 @@ class WorkflowRegistryTests(unittest.TestCase):
             self.assertEqual(d["type"], type_name)
             self.assertIn("fields", d)
             self.assertIn("processor", d)
-            self.assertIn("default_persona", d)
+            self.assertIn("default_task_framing", d)
+            self.assertIn("default_output_template", d)
 
-    def test_each_workflow_default_persona_nonempty(self) -> None:
+    def test_each_workflow_default_task_framing_nonempty(self) -> None:
         for schema in WORKFLOW_TYPES.values():
-            self.assertTrue(schema.default_persona.strip())
+            self.assertTrue(schema.default_task_framing.strip())
+
+    def test_each_workflow_default_output_template_nonempty(self) -> None:
+        for schema in WORKFLOW_TYPES.values():
+            self.assertTrue(schema.default_output_template.strip())
 
 
 class WorkflowDataValidationTests(unittest.TestCase):
@@ -122,34 +127,20 @@ class PerWorkflowExtractorTests(unittest.TestCase):
         self,
         workflow_type: str,
         workflow_data: dict,
-        *,
-        persona: str = "",
     ) -> Session:
         return new_session(
             id="test_x",
             title="Test",
             workflow_type=workflow_type,
-            # The persona-by-id resolution happens at the runtime layer, not
-            # here. workflows.get_persona always returns the workflow default.
             common=CommonSettings(),
             workflow_data=workflow_data,
         )
 
-    def test_get_persona_falls_back_to_workflow_default(self) -> None:
+    def test_default_task_framing_falls_back_to_workflow_default(self) -> None:
         s = self._build("open_discussion", {"question": "Q?"})
-        self.assertIn("thoughtful facilitator", get_persona(s).lower())
+        self.assertIn("thoughtful facilitator", get_default_task_framing(s).lower())
 
-    def test_get_persona_returns_workflow_default(self) -> None:
-        # After personas became first-class objects, workflows.get_persona
-        # is the workflow default ONLY. The runtime layer is responsible for
-        # resolving the user-chosen persona by id (see runtime.BotContext).
-        s = self._build("open_discussion", {"question": "Q?"})
-        self.assertEqual(
-            get_persona(s),
-            WORKFLOW_TYPES["open_discussion"].default_persona,
-        )
-
-    def test_persona_per_workflow_default_is_distinct(self) -> None:
+    def test_task_framing_per_workflow_default_is_distinct(self) -> None:
         # workflow_data is schema-validated, so each workflow gets a
         # minimum-valid dict shaped to its own schema.
         per_type_data = {
@@ -158,7 +149,8 @@ class PerWorkflowExtractorTests(unittest.TestCase):
             "document_revision": {"reference_document": "doc"},
         }
         defaults = {
-            t: get_persona(self._build(t, per_type_data[t])) for t in WORKFLOW_TYPES
+            t: get_default_task_framing(self._build(t, per_type_data[t]))
+            for t in WORKFLOW_TYPES
         }
         # Three distinct strings — defaults don't accidentally collide.
         self.assertEqual(len(set(defaults.values())), 3)
@@ -292,10 +284,7 @@ class SessionDataclassTests(unittest.TestCase):
             id="round_trip",
             title="Round trip",
             workflow_type="open_discussion",
-            common=CommonSettings(
-                ai_persona_id="my-custom-persona",
-                facilitation_depth="deep",
-            ),
+            common=CommonSettings(facilitation_depth="deep"),
             workflow_data={
                 "question": "Q?",
                 "context": "ctx",

@@ -43,17 +43,6 @@ from fastapi import (
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
-from ..personas import (
-    InvalidPersonaIdError,
-    Persona,
-    PersonaError,
-    PersonaFileError,
-    delete_persona,
-    list_personas,
-    load_persona,
-    persona_path,
-    save_persona,
-)
 from ..registry import SessionRegistry
 from ..session import (
     CommonSettings,
@@ -71,6 +60,13 @@ from ..storage import (
     list_participant_files,
     load_participant,
     read_index,
+)
+from ..prompts import FACILITATOR_MECHANICS
+from ..workflow_overrides import (
+    WorkflowOverrides,
+    list_overrides,
+    load_overrides,
+    save_overrides,
 )
 from ..workflows import (
     UnknownWorkflowType,
@@ -137,13 +133,41 @@ class SessionResponse(BaseModel):
 
 
 class WorkflowTypeResponse(BaseModel):
+    """The full per-workflow-type record the admin UI consumes.
+
+    Includes the structural bits (label, description, processor, field
+    schema, UI hints) plus both the code-defined defaults and the current
+    admin overrides for the three editable prompt fragments. The session
+    form only needs the structural fields; the workflow editor needs the
+    rest.
+    """
+
     type: str
     label: str
     description: str
-    default_persona: str
     processor: str
     fields: list[dict[str, Any]]
     ui: dict[str, Any]
+    # Defaults (what runs if nothing is overridden).
+    default_task_framing: str
+    default_output_template: str
+    default_mechanics: str
+    # Current overrides (empty string = no override, default applies).
+    task_framing_override: str
+    output_template_override: str
+    mechanics_override: str
+
+
+class WorkflowOverridesUpdate(BaseModel):
+    """Partial update to a workflow type's editable prompt fragments.
+
+    Any field omitted is left unchanged. Pass empty string to clear an
+    override (revert to the code-defined default).
+    """
+
+    task_framing: str | None = None
+    output_template: str | None = None
+    mechanics_override: str | None = None
 
 
 class RunResponse(BaseModel):
@@ -199,28 +223,6 @@ class ParticipantDetail(BaseModel):
     transcript: list[dict]
     extracted_points: list[dict]
     additions: list[dict]
-
-
-class PersonaResponse(BaseModel):
-    id: str
-    name: str
-    prompt: str
-    description: str = ""
-
-
-class CreatePersonaRequest(BaseModel):
-    id: str = Field(..., description="kebab/snake_case slug.")
-    name: str
-    prompt: str
-    description: str = ""
-
-
-class UpdatePersonaRequest(BaseModel):
-    """All fields optional — id is immutable."""
-
-    name: str | None = None
-    prompt: str | None = None
-    description: str | None = None
 
 
 class TelegramStatusResponse(BaseModel):
@@ -327,140 +329,83 @@ def _build_router(
 
     # ------------------------------------------------------------------ workflow types
 
+    def _workflow_type_response(workflow_type: str) -> WorkflowTypeResponse:
+        """Assemble the full record (defaults + overrides) for one workflow type."""
+        schema = get_workflow(workflow_type)
+        overrides = load_overrides(workflow_type, registry.app_config.workflows_dir)
+        return WorkflowTypeResponse(
+            type=schema.type,
+            label=schema.label,
+            description=schema.description,
+            processor=schema.processor,
+            fields=[f.to_dict() for f in schema.fields],
+            ui=dict(schema.ui),
+            default_task_framing=schema.default_task_framing,
+            default_output_template=schema.default_output_template,
+            default_mechanics=FACILITATOR_MECHANICS,
+            task_framing_override=overrides.task_framing,
+            output_template_override=overrides.output_template,
+            mechanics_override=overrides.mechanics_override,
+        )
+
     @router.get("/workflow-types", response_model=list[WorkflowTypeResponse])
     async def list_workflow_types() -> list[WorkflowTypeResponse]:
-        return [
-            WorkflowTypeResponse(**schema.to_dict())
-            for schema in WORKFLOW_TYPES.values()
-        ]
-
-    # ------------------------------------------------------------------ personas
-    #
-    # Personas are managed independently of sessions. A session references one
-    # by id via `common.ai_persona_id`. We don't reject deletion of a persona
-    # that's in use; the runtime falls back to the workflow default in that
-    # case (see `circle.personas.resolve_persona_text`).
-
-    @router.get("/personas", response_model=list[PersonaResponse])
-    async def list_all_personas() -> list[PersonaResponse]:
-        return [
-            PersonaResponse(**p.to_dict())
-            for p in list_personas(registry.app_config.personas_dir)
-        ]
-
-    @router.post(
-        "/personas",
-        response_model=PersonaResponse,
-        responses={
-            400: {"model": ErrorResponse},
-            409: {"model": ErrorResponse},
-        },
-    )
-    async def create_persona(body: CreatePersonaRequest) -> PersonaResponse:
-        if persona_path(registry.app_config.personas_dir, body.id).exists():
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "code": "persona_exists",
-                    "error": f"A persona with id {body.id!r} already exists.",
-                },
-            )
-        try:
-            persona = Persona(
-                id=body.id,
-                name=body.name,
-                prompt=body.prompt,
-                description=body.description,
-            )
-        except (InvalidPersonaIdError, PersonaError) as exc:
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "invalid_persona", "error": str(exc)},
-            )
-        save_persona(persona, registry.app_config.personas_dir)
-        logger.info("admin created persona id=%s", persona.id)
-        return PersonaResponse(**persona.to_dict())
+        return [_workflow_type_response(t) for t in WORKFLOW_TYPES]
 
     @router.get(
-        "/personas/{persona_id}",
-        response_model=PersonaResponse,
+        "/workflow-types/{workflow_type}",
+        response_model=WorkflowTypeResponse,
         responses={404: {"model": ErrorResponse}},
     )
-    async def get_persona_detail(
-        persona_id: Annotated[str, PathParam(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")],
-    ) -> PersonaResponse:
-        try:
-            persona = load_persona(persona_id, registry.app_config.personas_dir)
-        except PersonaFileError:
+    async def get_workflow_type(workflow_type: str) -> WorkflowTypeResponse:
+        if workflow_type not in WORKFLOW_TYPES:
             raise HTTPException(
                 status_code=404,
                 detail={
-                    "code": "persona_not_found",
-                    "error": f"No persona {persona_id!r}",
+                    "code": "workflow_type_not_found",
+                    "error": f"No workflow type {workflow_type!r}",
                 },
             )
-        return PersonaResponse(**persona.to_dict())
+        return _workflow_type_response(workflow_type)
 
     @router.patch(
-        "/personas/{persona_id}",
-        response_model=PersonaResponse,
-        responses={
-            400: {"model": ErrorResponse},
-            404: {"model": ErrorResponse},
-        },
-    )
-    async def patch_persona(
-        persona_id: Annotated[str, PathParam(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")],
-        body: UpdatePersonaRequest,
-    ) -> PersonaResponse:
-        try:
-            current = load_persona(persona_id, registry.app_config.personas_dir)
-        except PersonaFileError:
-            raise HTTPException(
-                status_code=404,
-                detail={
-                    "code": "persona_not_found",
-                    "error": f"No persona {persona_id!r}",
-                },
-            )
-        try:
-            updated = Persona(
-                id=current.id,
-                name=body.name if body.name is not None else current.name,
-                prompt=body.prompt if body.prompt is not None else current.prompt,
-                description=(
-                    body.description
-                    if body.description is not None
-                    else current.description
-                ),
-            )
-        except PersonaError as exc:
-            raise HTTPException(
-                status_code=400,
-                detail={"code": "invalid_persona", "error": str(exc)},
-            )
-        save_persona(updated, registry.app_config.personas_dir)
-        logger.info("admin updated persona id=%s", updated.id)
-        return PersonaResponse(**updated.to_dict())
-
-    @router.delete(
-        "/personas/{persona_id}",
+        "/workflow-types/{workflow_type}",
+        response_model=WorkflowTypeResponse,
         responses={404: {"model": ErrorResponse}},
     )
-    async def remove_persona(
-        persona_id: Annotated[str, PathParam(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")],
-    ) -> dict[str, Any]:
-        existed = delete_persona(persona_id, registry.app_config.personas_dir)
-        if not existed:
+    async def patch_workflow_type(
+        workflow_type: str,
+        body: WorkflowOverridesUpdate,
+    ) -> WorkflowTypeResponse:
+        """Update any subset of the editable prompt fragments. Empty
+        string clears an override (revert to default)."""
+        if workflow_type not in WORKFLOW_TYPES:
             raise HTTPException(
                 status_code=404,
                 detail={
-                    "code": "persona_not_found",
-                    "error": f"No persona {persona_id!r}",
+                    "code": "workflow_type_not_found",
+                    "error": f"No workflow type {workflow_type!r}",
                 },
             )
-        logger.info("admin deleted persona id=%s", persona_id)
-        return {"status": "ok"}
+        current = load_overrides(workflow_type, registry.app_config.workflows_dir)
+        merged = WorkflowOverrides(
+            type=workflow_type,
+            task_framing=(
+                body.task_framing if body.task_framing is not None
+                else current.task_framing
+            ),
+            output_template=(
+                body.output_template if body.output_template is not None
+                else current.output_template
+            ),
+            mechanics_override=(
+                body.mechanics_override if body.mechanics_override is not None
+                else current.mechanics_override
+            ),
+        )
+        save_overrides(merged, registry.app_config.workflows_dir)
+        logger.info("admin updated workflow_type=%s overrides", workflow_type)
+        return _workflow_type_response(workflow_type)
 
     # ------------------------------------------------------------------ sessions
 

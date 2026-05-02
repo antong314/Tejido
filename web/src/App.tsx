@@ -4,9 +4,9 @@ import { Chat } from "./components/Chat";
 import { EditSession } from "./admin/EditSession";
 import { NewSession } from "./admin/NewSession";
 import { ParticipantDetail } from "./admin/ParticipantDetail";
-import { Personas } from "./admin/Personas";
-import { PersonaEdit } from "./admin/PersonaEdit";
 import { SessionList } from "./admin/SessionList";
+import { WorkflowTypes } from "./admin/WorkflowTypes";
+import { WorkflowTypeEdit } from "./admin/WorkflowTypeEdit";
 import { useRoute } from "./router";
 
 // Identity is stored per-session in localStorage. Different sessions on the
@@ -56,12 +56,10 @@ export default function App() {
       document.title = "Tejido — new workflow";
     else if (route.name === "admin_edit_session")
       document.title = `Tejido — admin — ${route.sessionId}`;
-    else if (route.name === "admin_personas")
-      document.title = "Tejido — personas";
-    else if (route.name === "admin_new_persona")
-      document.title = "Tejido — new persona";
-    else if (route.name === "admin_edit_persona")
-      document.title = `Tejido — persona — ${route.personaId}`;
+    else if (route.name === "admin_workflows")
+      document.title = "Tejido — workflows";
+    else if (route.name === "admin_edit_workflow")
+      document.title = `Tejido — workflow — ${route.workflowType}`;
     else document.title = "Tejido";
   }, [route]);
 
@@ -76,10 +74,9 @@ export default function App() {
         participantId={route.participantId}
       />
     );
-  if (route.name === "admin_personas") return <Personas />;
-  if (route.name === "admin_new_persona") return <PersonaEdit personaId={null} />;
-  if (route.name === "admin_edit_persona")
-    return <PersonaEdit personaId={route.personaId} />;
+  if (route.name === "admin_workflows") return <WorkflowTypes />;
+  if (route.name === "admin_edit_workflow")
+    return <WorkflowTypeEdit workflowType={route.workflowType} />;
   if (route.name === "session")
     return <ParticipantSession sessionId={route.sessionId} />;
   return <Welcome />;

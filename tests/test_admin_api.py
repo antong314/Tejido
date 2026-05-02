@@ -33,14 +33,14 @@ def _build_client(
 
     sessions_dir = root / "config" / "sessions"
     sessions_dir.mkdir(parents=True)
-    personas_dir = root / "config" / "personas"
-    personas_dir.mkdir(parents=True)
+    workflows_dir = root / "config" / "workflows"
+    workflows_dir.mkdir(parents=True)
 
     secrets = Secrets(anthropic_api_key="t", telegram_bot_token="t")
     app_config = AppConfig(
         secrets=secrets,
         sessions_dir=sessions_dir,
-        personas_dir=personas_dir,
+        workflows_dir=workflows_dir,
         data_dir_base=root / "data",
         syntheses_dir=root / "syntheses",
         proposals_dir=root / "proposals",
@@ -71,7 +71,13 @@ class WorkflowTypesTests(unittest.TestCase):
         client, _ = _build_client(self)
         for entry in client.get("/api/admin/workflow-types").json():
             self.assertIsInstance(entry["fields"], list)
-            self.assertTrue(entry["default_persona"])
+            self.assertTrue(entry["default_task_framing"])
+            self.assertTrue(entry["default_output_template"])
+            self.assertTrue(entry["default_mechanics"])
+            # Overrides start empty since no JSON file exists yet.
+            self.assertEqual(entry["task_framing_override"], "")
+            self.assertEqual(entry["output_template_override"], "")
+            self.assertEqual(entry["mechanics_override"], "")
             self.assertIn("processor", entry)
 
 
@@ -392,87 +398,116 @@ class OutputListingTests(unittest.TestCase):
         self.assertIn("synthesis_with_outputs_20260501.md", names)
 
 
-class PersonasCRUDTests(unittest.TestCase):
-    def test_list_seeded_personas(self) -> None:
-        # _build_client doesn't run config.load_app_config, so the personas
-        # dir starts empty. Seed it explicitly.
-        client, app_config = _build_client(self)
-        from circle.personas import seed_default_personas
+class WorkflowTypeOverridesTests(unittest.TestCase):
+    """The admin can edit task_framing, output_template, and mechanics
+    per workflow type. Empty string clears the override (revert to default)."""
 
-        app_config.personas_dir.mkdir(parents=True, exist_ok=True)
-        seed_default_personas(app_config.personas_dir)
-        r = client.get("/api/admin/personas")
-        self.assertEqual(r.status_code, 200, r.text)
-        ids = {p["id"] for p in r.json()}
-        self.assertEqual(
-            ids,
-            {
-                "open_discussion__default",
-                "decision_drafting__default",
-                "document_revision__default",
-            },
-        )
-
-    def test_create_get_update_delete_round_trip(self) -> None:
+    def test_get_one_returns_defaults_when_no_override(self) -> None:
         client, _ = _build_client(self)
-        # Create
-        r = client.post(
-            "/api/admin/personas",
-            json={
-                "id": "warm_coach",
-                "name": "Warm coach",
-                "description": "A patient, encouraging tone.",
-                "prompt": "You are a warm, patient facilitator.",
-            },
-        )
+        r = client.get("/api/admin/workflow-types/open_discussion")
         self.assertEqual(r.status_code, 200, r.text)
-        # Get
-        r = client.get("/api/admin/personas/warm_coach")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json()["name"], "Warm coach")
-        # Patch
+        body = r.json()
+        self.assertTrue(body["default_task_framing"])
+        self.assertTrue(body["default_output_template"])
+        self.assertEqual(body["task_framing_override"], "")
+        self.assertEqual(body["output_template_override"], "")
+        self.assertEqual(body["mechanics_override"], "")
+
+    def test_get_404_on_unknown_type(self) -> None:
+        client, _ = _build_client(self)
+        r = client.get("/api/admin/workflow-types/not_a_real_workflow")
+        self.assertEqual(r.status_code, 404)
+
+    def test_patch_writes_overrides_and_round_trips(self) -> None:
+        client, _ = _build_client(self)
         r = client.patch(
-            "/api/admin/personas/warm_coach", json={"name": "Renamed"}
+            "/api/admin/workflow-types/open_discussion",
+            json={
+                "task_framing": "You are a sharp researcher.",
+                "mechanics_override": "Probe quickly.",
+            },
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(
+            body["task_framing_override"], "You are a sharp researcher."
+        )
+        self.assertEqual(body["mechanics_override"], "Probe quickly.")
+        # Output template unchanged.
+        self.assertEqual(body["output_template_override"], "")
+        # Subsequent GET returns the same.
+        r2 = client.get("/api/admin/workflow-types/open_discussion")
+        self.assertEqual(
+            r2.json()["task_framing_override"],
+            "You are a sharp researcher.",
+        )
+
+    def test_patch_partial_update_preserves_other_fields(self) -> None:
+        client, _ = _build_client(self)
+        client.patch(
+            "/api/admin/workflow-types/open_discussion",
+            json={"task_framing": "First."},
+        )
+        client.patch(
+            "/api/admin/workflow-types/open_discussion",
+            json={"output_template_override": None, "mechanics_override": "Second."},
+        )
+        r = client.get("/api/admin/workflow-types/open_discussion")
+        self.assertEqual(r.json()["task_framing_override"], "First.")
+        self.assertEqual(r.json()["mechanics_override"], "Second.")
+
+    def test_patch_empty_string_clears_override(self) -> None:
+        client, _ = _build_client(self)
+        # Set then clear.
+        client.patch(
+            "/api/admin/workflow-types/open_discussion",
+            json={"task_framing": "Custom"},
+        )
+        r = client.patch(
+            "/api/admin/workflow-types/open_discussion",
+            json={"task_framing": ""},
         )
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json()["name"], "Renamed")
+        self.assertEqual(r.json()["task_framing_override"], "")
+
+    def test_patch_404_on_unknown_type(self) -> None:
+        client, _ = _build_client(self)
+        r = client.patch(
+            "/api/admin/workflow-types/not_a_real_workflow",
+            json={"task_framing": "x"},
+        )
+        self.assertEqual(r.status_code, 404)
+
+    def test_patch_actually_changes_resolved_runtime_value(self) -> None:
+        # End-to-end: PATCH the override, then call the resolver and
+        # confirm it returns the new text instead of the default.
+        from circle.workflow_overrides import (
+            get_mechanics,
+            get_output_template,
+            get_task_framing,
+        )
+
+        client, app_config = _build_client(self)
+        client.patch(
+            "/api/admin/workflow-types/open_discussion",
+            json={
+                "task_framing": "Override A.",
+                "output_template": "Override B.",
+                "mechanics_override": "Override C.",
+            },
+        )
         self.assertEqual(
-            r.json()["prompt"], "You are a warm, patient facilitator."
+            get_task_framing("open_discussion", app_config.workflows_dir),
+            "Override A.",
         )
-        # Delete (idempotent: second call 404s)
-        r = client.delete("/api/admin/personas/warm_coach")
-        self.assertEqual(r.status_code, 200, r.text)
-        r2 = client.delete("/api/admin/personas/warm_coach")
-        self.assertEqual(r2.status_code, 404)
-
-    def test_create_409_on_dupe_id(self) -> None:
-        client, _ = _build_client(self)
-        for code in (200, 409):
-            r = client.post(
-                "/api/admin/personas",
-                json={
-                    "id": "dupe",
-                    "name": "x",
-                    "prompt": "you are dupe",
-                },
-            )
-            self.assertEqual(r.status_code, code, r.text)
-
-    def test_create_400_on_invalid_id(self) -> None:
-        client, _ = _build_client(self)
-        r = client.post(
-            "/api/admin/personas",
-            json={"id": "Has Spaces", "name": "x", "prompt": "p"},
+        self.assertEqual(
+            get_output_template("open_discussion", app_config.workflows_dir),
+            "Override B.",
         )
-        self.assertEqual(r.status_code, 400)
-
-    def test_create_400_on_empty_prompt(self) -> None:
-        client, _ = _build_client(self)
-        r = client.post(
-            "/api/admin/personas",
-            json={"id": "blanky", "name": "x", "prompt": "   "},
+        self.assertEqual(
+            get_mechanics("open_discussion", app_config.workflows_dir),
+            "Override C.",
         )
-        self.assertEqual(r.status_code, 400)
 
 
 class TelegramAdminTests(unittest.TestCase):

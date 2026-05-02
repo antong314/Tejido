@@ -74,9 +74,6 @@ class CommonSettings:
     # facilitator's system prompt; not a hard cap. See
     # `circle.prompts.DEPTH_BLOCKS` for the exact text per setting.
     facilitation_depth: FacilitationDepth = "medium"
-    # Slug reference into `config/personas/<id>.json`. Empty = fall back
-    # to the workflow type's `default_persona` (see `circle.workflows`).
-    ai_persona_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -87,17 +84,13 @@ class CommonSettings:
         depth = str(raw.get("facilitation_depth", "medium")) or "medium"
         if depth not in _VALID_DEPTHS:
             depth = "medium"
-        # Backward compat: pre-personas configs stored a free-text
-        # `ai_persona` field. We don't try to migrate the text into a
-        # persona (that's an admin decision); we just drop it. New configs
-        # use `ai_persona_id`.
-        ai_persona_id = str(raw.get("ai_persona_id", "")).strip()
+        # Unknown fields (e.g. legacy `ai_persona` / `ai_persona_id` from
+        # pre-Workflow-as-managed-object sessions) are silently ignored.
         return cls(
             facilitator_model=str(raw.get("facilitator_model", "claude-sonnet-4-6")),
             synthesis_model=str(raw.get("synthesis_model", "claude-opus-4-6")),
             language=str(raw.get("language", "auto")) or "auto",
             facilitation_depth=depth,
-            ai_persona_id=ai_persona_id,
         )
 
 

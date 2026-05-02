@@ -1,27 +1,36 @@
 """System prompts.
 
-The facilitator prompt is split into three pieces:
+The facilitator prompt is split into four pieces:
 
-  * PERSONA — the "who you are" framing. Configurable per session via the
-    admin UI; defaults are defined per workflow type in `circle.workflows`.
+  * TASK_FRAMING — the "what kind of conversation are we having" wrapper.
+    Configurable per workflow type via the admin UI; defaults live on
+    `WorkflowSchema.default_task_framing` in `circle.workflows`.
   * QUESTION_BLOCK + CONTEXT — workflow-specific content built from the
     session's `workflow_data`.
-  * MECHANICS — the fixed how-to-facilitate scaffolding (probing,
-    pacing, the [READY_FOR_PERMISSIONS] token). NOT user-editable.
+  * MECHANICS — the how-to-facilitate scaffolding (probing patterns,
+    pacing, the [READY_FOR_PERMISSIONS] token). System default is the
+    `FACILITATOR_MECHANICS` constant in this module; the admin can
+    override per workflow type via `circle.workflow_overrides`.
+  * DEPTH_BLOCK — the conversation pacing block, picked from
+    DEPTH_BLOCKS by the session's `facilitation_depth` setting.
 
-The synthesis and proposal prompts stay as monolithic templates because
-their tuning is deep and not currently exposed for user editing.
+The synthesis / proposal / revise output prompts are also overridable
+per workflow type; defaults live on `WorkflowSchema.default_output_template`
+and the renderers below accept an explicit `template` argument.
 
 The placeholders ({QUESTION}, {CONTEXT}, {TRANSCRIPT}, {TRANSCRIPTS},
-{PERSONA}, {QUESTION_BLOCK}) are filled at call time via str.format.
+{TASK_FRAMING}, {QUESTION_BLOCK}, etc.) are filled at call time via
+str.format.
 """
 
 from __future__ import annotations
 
 
-# The default persona used by the legacy single-arg `render_facilitator_prompt`.
-# New code should pass an explicit persona (workflow default or user override).
-LEGACY_FACILITATOR_PERSONA = (
+# Fallback task-framing used by the legacy positional-arg
+# `render_facilitator_prompt(question, context)` calling style. New code
+# should pass an explicit task_framing — typically the resolved
+# (override-or-default) value from circle.workflow_overrides.get_task_framing.
+LEGACY_FACILITATOR_TASK_FRAMING = (
     "You are a thoughtful facilitator helping someone think through a "
     "question that matters to their community. You are NOT an expert, NOT "
     "an advocate, and NOT trying to inform or persuade. Your only job is "
@@ -133,7 +142,7 @@ DEPTH_BLOCKS: dict[str, str] = {
 
 
 FACILITATOR_SYSTEM_PROMPT_TEMPLATE = """\
-{PERSONA}
+{TASK_FRAMING}
 
 THE QUESTION BEING EXPLORED:
 {QUESTION_BLOCK}
@@ -365,24 +374,28 @@ def render_facilitator_prompt(
     question: str | None = None,
     context: str | None = None,
     *,
-    persona: str | None = None,
+    task_framing: str | None = None,
     question_block: str | None = None,
+    mechanics: str | None = None,
     facilitation_depth: str = "medium",
 ) -> str:
     """Assemble the facilitator system prompt.
 
-    Two calling styles are supported during the migration:
+    Two calling styles are supported:
 
       * Legacy positional: `render_facilitator_prompt(question, context)`.
-        Uses the default persona; `question` is the question block.
-      * Workflow-aware keyword: `render_facilitator_prompt(persona=...,
-        question_block=..., context=...)`. The session-aware path.
+        Uses the legacy task-framing string; `question` is the question
+        block. Kept for tests + early callers.
+      * Workflow-aware keyword: `render_facilitator_prompt(
+          task_framing=..., question_block=..., context=...,
+          mechanics=..., facilitation_depth=...)`. The session-aware
+        path used by BotContext.facilitator_system_prompt.
 
-    The new keyword style is preferred — pass an explicit persona (workflow
-    default or user override) and a question_block built by
-    `circle.workflows.build_question_block(session)`. `facilitation_depth`
-    picks one of the DEPTH_BLOCKS pacing paragraphs; unknown values fall
-    back to "medium" so a stale config never breaks the LLM call.
+    `task_framing` defaults to LEGACY_FACILITATOR_TASK_FRAMING when omitted.
+    `mechanics` defaults to FACILITATOR_MECHANICS when omitted (the system
+    default; admin overrides come in via the workflow_overrides resolver).
+    `facilitation_depth` picks one of the DEPTH_BLOCKS paragraphs; unknown
+    values fall back to "medium" so a stale config never breaks the LLM call.
     """
     if question_block is None:
         if question is None:
@@ -391,14 +404,16 @@ def render_facilitator_prompt(
                 "(legacy positional) or `question_block` (keyword)"
             )
         question_block = question
-    if persona is None:
-        persona = LEGACY_FACILITATOR_PERSONA
+    if task_framing is None:
+        task_framing = LEGACY_FACILITATOR_TASK_FRAMING
+    if mechanics is None:
+        mechanics = FACILITATOR_MECHANICS
     depth_block = DEPTH_BLOCKS.get(facilitation_depth, DEPTH_BLOCKS["medium"])
     return FACILITATOR_SYSTEM_PROMPT_TEMPLATE.format(
-        PERSONA=persona.strip(),
+        TASK_FRAMING=task_framing.strip(),
         QUESTION_BLOCK=question_block,
         CONTEXT=context or "(none provided)",
-        MECHANICS=FACILITATOR_MECHANICS,
+        MECHANICS=mechanics,
         DEPTH_BLOCK=depth_block,
     )
 
@@ -408,9 +423,20 @@ def render_extraction_prompt(transcript: str) -> str:
 
 
 def render_synthesis_prompt(
-    question: str, transcripts: str, community_context: str = ""
+    question: str,
+    transcripts: str,
+    community_context: str = "",
+    *,
+    template: str | None = None,
 ) -> str:
-    return SYNTHESIS_SYSTEM_PROMPT.format(
+    """Render the synthesis system prompt.
+
+    `template` defaults to SYNTHESIS_SYSTEM_PROMPT when omitted. Pass a
+    workflow-override string here when one is set; the slots
+    ({QUESTION}, {TRANSCRIPTS}, {COMMUNITY_CONTEXT}) must be present in
+    the override too.
+    """
+    return (template if template is not None else SYNTHESIS_SYSTEM_PROMPT).format(
         QUESTION=question,
         TRANSCRIPTS=transcripts,
         COMMUNITY_CONTEXT=community_context or "(none provided)",
@@ -550,9 +576,15 @@ WHAT NOT TO DO:
 
 
 def render_proposal_prompt(
-    question: str, transcripts: str, community_context: str = ""
+    question: str,
+    transcripts: str,
+    community_context: str = "",
+    *,
+    template: str | None = None,
 ) -> str:
-    return PROPOSAL_SYSTEM_PROMPT.format(
+    """Render the proposal system prompt. `template` defaults to
+    PROPOSAL_SYSTEM_PROMPT; pass a workflow-override to use that instead."""
+    return (template if template is not None else PROPOSAL_SYSTEM_PROMPT).format(
         QUESTION=question,
         TRANSCRIPTS=transcripts,
         COMMUNITY_CONTEXT=community_context or "(none provided)",
@@ -649,9 +681,15 @@ WHAT NOT TO DO:
 
 
 def render_revise_prompt(
-    *, original_document: str, transcripts: str, community_context: str = ""
+    *,
+    original_document: str,
+    transcripts: str,
+    community_context: str = "",
+    template: str | None = None,
 ) -> str:
-    return REVISE_SYSTEM_PROMPT.format(
+    """Render the revise system prompt. `template` defaults to
+    REVISE_SYSTEM_PROMPT; pass a workflow-override to use that instead."""
+    return (template if template is not None else REVISE_SYSTEM_PROMPT).format(
         ORIGINAL_DOCUMENT=original_document,
         TRANSCRIPTS=transcripts,
         COMMUNITY_CONTEXT=community_context or "(none provided)",

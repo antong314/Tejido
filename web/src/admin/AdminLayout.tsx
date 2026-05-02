@@ -23,7 +23,7 @@ export function AdminLayout({ children, title }: Props) {
           </a>
           <nav className="flex items-center gap-4 text-xs">
             <NavLink href="/admin">Sessions</NavLink>
-            <NavLink href="/admin/personas">Personas</NavLink>
+            <NavLink href="/admin/workflows">Workflows</NavLink>
           </nav>
           {title && (
             <span className="text-sm text-neutral-600">{title}</span>

@@ -16,6 +16,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
+from .prompts import (
+    PROPOSAL_SYSTEM_PROMPT,
+    REVISE_SYSTEM_PROMPT,
+    SYNTHESIS_SYSTEM_PROMPT,
+)
+
 if TYPE_CHECKING:
     from .session import Session
 
@@ -52,7 +58,17 @@ class WorkflowSchema:
     type: str
     label: str
     description: str
-    default_persona: str
+    # The "what kind of conversation are we having" framing that wraps
+    # every facilitator turn. Conceptually a per-workflow concern (NOT a
+    # per-session voice override) — one of these per workflow type. The
+    # admin can override this string via the workflow editor; this
+    # default is the fallback when no override is set.
+    default_task_framing: str
+    # The post-conversation processor's system prompt template. Long,
+    # tightly tuned per workflow. Format slots match the renderer for
+    # the corresponding processor (see prompts.render_synthesis_prompt
+    # etc.). The admin can override; this is the fallback.
+    default_output_template: str
     processor: ProcessorName
     fields: list[FieldSchema]
     # UI hints for the participant view. Currently supports:
@@ -68,7 +84,8 @@ class WorkflowSchema:
             "type": self.type,
             "label": self.label,
             "description": self.description,
-            "default_persona": self.default_persona,
+            "default_task_framing": self.default_task_framing,
+            "default_output_template": self.default_output_template,
             "processor": self.processor,
             "fields": [f.to_dict() for f in self.fields],
             "ui": dict(self.ui),
@@ -82,10 +99,11 @@ class WorkflowSchema:
 
 
 # ---------------------------------------------------------------------------
-# Default personas — one per workflow type. Editable per session via the
-# admin UI; if blank, we fall back to these.
+# Default task framings — one per workflow type. The "what kind of
+# conversation are we having" wrapper around every facilitator turn.
+# Editable per workflow via the admin UI; if blank, we fall back to these.
 
-_PERSONA_OPEN_DISCUSSION = (
+_TASK_FRAMING_OPEN_DISCUSSION = (
     "You are a thoughtful facilitator helping someone think through a "
     "question that matters to their community. You are NOT an expert, NOT "
     "an advocate, and NOT trying to inform or persuade. Your only job is "
@@ -93,7 +111,7 @@ _PERSONA_OPEN_DISCUSSION = (
     "including the parts they haven't fully worked out yet."
 )
 
-_PERSONA_DECISION_DRAFTING = (
+_TASK_FRAMING_DECISION_DRAFTING = (
     "You are a thoughtful facilitator helping someone work toward a "
     "concrete decision their community is about to make. Your job is to "
     "help them articulate not just their feelings on the question, but "
@@ -103,7 +121,7 @@ _PERSONA_DECISION_DRAFTING = (
     "gently toward specifics they could vote on."
 )
 
-_PERSONA_DOCUMENT_REVISION = (
+_TASK_FRAMING_DOCUMENT_REVISION = (
     "You are a thoughtful facilitator helping someone react to a specific "
     "document the group is revising. Your job is to help them articulate, "
     "in their own language, what they like, what doesn't sit right, and "
@@ -125,7 +143,8 @@ WORKFLOW_TYPES: dict[str, WorkflowSchema] = {
             "A free-form facilitated conversation around a question. "
             "Output is a discussion synthesis — themes, splits, outliers."
         ),
-        default_persona=_PERSONA_OPEN_DISCUSSION,
+        default_task_framing=_TASK_FRAMING_OPEN_DISCUSSION,
+        default_output_template=SYNTHESIS_SYSTEM_PROMPT,
         processor="synthesis",
         fields=[
             FieldSchema(
@@ -165,7 +184,8 @@ WORKFLOW_TYPES: dict[str, WorkflowSchema] = {
             "Develop concrete language the group could decide on. "
             "Output is a draft proposal + per-participant predicted vote signals."
         ),
-        default_persona=_PERSONA_DECISION_DRAFTING,
+        default_task_framing=_TASK_FRAMING_DECISION_DRAFTING,
+        default_output_template=PROPOSAL_SYSTEM_PROMPT,
         processor="proposal",
         fields=[
             FieldSchema(
@@ -198,7 +218,8 @@ WORKFLOW_TYPES: dict[str, WorkflowSchema] = {
             "Collect reactions to an existing document and produce a "
             "version 2 with rationale for what changed."
         ),
-        default_persona=_PERSONA_DOCUMENT_REVISION,
+        default_task_framing=_TASK_FRAMING_DOCUMENT_REVISION,
+        default_output_template=REVISE_SYSTEM_PROMPT,
         processor="revise",
         # Document-revision participants should always have the document in
         # front of them — the conversation IS about the document. Use the
@@ -321,24 +342,15 @@ def validate_workflow_data(workflow_type: str, data: dict[str, Any]) -> None:
 # get a special case here.
 
 
-def get_default_persona(session: "Session") -> str:
-    """The workflow type's built-in default persona for this session.
+def get_default_task_framing(session: "Session") -> str:
+    """The workflow type's built-in default task-framing for this session.
 
-    This is the fallback used when the session's `ai_persona_id` is empty
-    or points to a missing/invalid persona file. Persona resolution by id
-    happens in the runtime layer (see `circle.runtime.BotContext`) so this
-    module stays free of any filesystem dependency on `config/personas/`.
+    This is the fallback used when there's no admin override on disk for
+    the workflow. Override resolution happens in the runtime layer (see
+    `circle.runtime.BotContext`) so this module stays free of any
+    filesystem dependency on `config/workflows/`.
     """
-    return get_workflow(session.workflow_type).default_persona
-
-
-# Back-compat shim: older call sites used `get_persona(session)` to get the
-# resolved persona text. After personas became first-class objects, the
-# resolution requires a personas directory we can't see from here. Callers
-# that only need the workflow default can use `get_default_persona`; callers
-# needing the user-chosen persona should use
-# `circle.personas.resolve_persona_text(session.common.ai_persona_id, ...)`.
-get_persona = get_default_persona
+    return get_workflow(session.workflow_type).default_task_framing
 
 
 def build_question_block(session: "Session") -> str:
@@ -462,8 +474,7 @@ __all__ = [
     "build_welcome_question",
     "get_community_context",
     "get_context",
-    "get_default_persona",
-    "get_persona",
+    "get_default_task_framing",
     "get_synthesis_question",
     "get_workflow",
     "get_workflow_ui",

@@ -16,10 +16,25 @@ export interface WorkflowSchema {
   type: string;
   label: string;
   description: string;
-  default_persona: string;
   processor: ProcessorName;
   fields: FieldSchema[];
   ui: { side_panel?: string };
+  // Code-defined defaults — what runs when no override is set.
+  default_task_framing: string;
+  default_output_template: string;
+  default_mechanics: string;
+  // Current admin overrides — empty string = no override (default applies).
+  task_framing_override: string;
+  output_template_override: string;
+  mechanics_override: string;
+}
+
+// Partial-update body for PATCH /api/admin/workflow-types/{type}.
+// Any omitted field is left unchanged. Empty string clears the override.
+export interface WorkflowOverridesUpdate {
+  task_framing?: string;
+  output_template?: string;
+  mechanics_override?: string;
 }
 
 export type FacilitationDepth = "minimal" | "medium" | "deep";
@@ -29,16 +44,6 @@ export interface CommonSettings {
   synthesis_model?: string;
   language?: string;
   facilitation_depth?: FacilitationDepth;
-  // Slug reference into a Persona (see /api/admin/personas). Empty = use
-  // the workflow type's default_persona.
-  ai_persona_id?: string;
-}
-
-export interface Persona {
-  id: string;
-  name: string;
-  prompt: string;
-  description: string;
 }
 
 export interface TelegramStatus {

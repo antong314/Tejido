@@ -176,10 +176,18 @@ async def run_synthesis(session: Session, app_config: AppConfig) -> Path:
         )
 
     transcripts_block = assemble_transcripts_block(participants)
+    # Resolve the override-or-default output template here so admin edits
+    # to the workflow take effect on the next run without a restart.
+    from .workflow_overrides import get_output_template
+
+    template = get_output_template(
+        session.workflow_type, app_config.workflows_dir
+    )
     prompt = render_synthesis_prompt(
         question=get_synthesis_question(session),
         transcripts=transcripts_block,
         community_context=get_community_context(session),
+        template=template,
     )
 
     anthropic = AnthropicClient(

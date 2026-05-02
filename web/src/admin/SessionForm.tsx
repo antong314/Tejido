@@ -1,13 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { ApiError } from "../api";
+import { useMemo, useState } from "react";
 import { navigate } from "../router";
-import { listPersonas } from "./api";
 import type {
   AdminSession,
   CommonSettings,
   FacilitationDepth,
   FieldSchema,
-  Persona,
   WorkflowSchema,
 } from "./types";
 
@@ -46,9 +43,11 @@ const DEPTH_LEVELS: {
   },
 ];
 
-// SessionForm renders all the fields for a session — common settings (model
-// names, persona) plus the schema-driven workflow_data fields. It works for
-// both create and edit; the parent decides what to do on submit.
+// SessionForm renders all the fields for a session — common settings
+// (model names, depth) plus the schema-driven workflow_data fields. The
+// task framing / output template / mechanics live on the workflow type
+// itself, not on the session, so they're edited at /admin/workflows/<type>.
+// Sessions just inherit whatever the workflow type currently resolves to.
 
 export interface SessionFormValue {
   id: string;
@@ -83,32 +82,6 @@ export function SessionForm({
   const [value, setValue] = useState<SessionFormValue>(initial);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-
-  // Personas — fetched once on mount; if the call fails we still let the
-  // form render (the dropdown will just show the workflow-default option).
-  const [personas, setPersonas] = useState<Persona[] | null>(null);
-  const [personasError, setPersonasError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await listPersonas();
-        if (!cancelled) setPersonas(r);
-      } catch (e) {
-        if (cancelled) return;
-        setPersonasError(
-          e instanceof ApiError
-            ? e.message
-            : "Couldn't load personas. Showing workflow default only.",
-        );
-        setPersonas([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const currentDepth: FacilitationDepth =
     (value.common.facilitation_depth as FacilitationDepth | undefined) ??
@@ -266,48 +239,19 @@ export function SessionForm({
           </Hint>
         </Field>
 
-        <Field label="AI persona">
-          <div className="flex items-center gap-2">
-            <select
-              value={value.common.ai_persona_id ?? ""}
-              onChange={(e) =>
-                setCommon("ai_persona_id", e.target.value || undefined)
-              }
-              disabled={submitting || personas === null}
-              className={inputClass(false)}
-            >
-              <option value="">
-                Workflow default ({schema.label.toLowerCase()})
-              </option>
-              {(personas ?? []).map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => navigate("/admin/personas")}
-              className="shrink-0 rounded-md border border-neutral-300 bg-white px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-50"
-            >
-              Manage
-            </button>
+        <Field label="Workflow prompts">
+          <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
+            The task framing, output template, and conversation mechanics
+            for <strong>{schema.label}</strong> are managed at the workflow
+            level — every session of this type inherits them.
           </div>
-          {personasError && (
-            <p className="mt-1 text-xs text-amber-700">{personasError}</p>
-          )}
-          <Hint>
-            The persona is the "who you are" framing dropped into the
-            facilitator's system prompt. The mechanical scaffolding (probing
-            patterns, pacing, when to wrap up) is fixed in code. Manage
-            personas separately so the same voice can be reused across
-            workflows.
-          </Hint>
-          <PersonaPreview
-            personaId={value.common.ai_persona_id ?? ""}
-            personas={personas ?? []}
-            workflowDefault={schema.default_persona}
-          />
+          <button
+            type="button"
+            onClick={() => navigate(`/admin/workflows/${schema.type}`)}
+            className="mt-2 text-xs font-medium text-neutral-700 hover:text-neutral-900"
+          >
+            Edit {schema.label.toLowerCase()} prompts →
+          </button>
         </Field>
 
         <Field label="Conversation depth">
@@ -400,34 +344,6 @@ function withCurrent(
     return [{ value: current, label: `${current} (unrecognized)` }, ...opts];
   }
   return opts;
-}
-
-function PersonaPreview({
-  personaId,
-  personas,
-  workflowDefault,
-}: {
-  personaId: string;
-  personas: Persona[];
-  workflowDefault: string;
-}) {
-  const persona = personaId
-    ? personas.find((p) => p.id === personaId)
-    : undefined;
-  const text = persona ? persona.prompt : workflowDefault;
-  const label = persona
-    ? persona.name
-    : "Workflow default (no persona selected)";
-  return (
-    <details className="mt-2 text-xs text-neutral-600">
-      <summary className="cursor-pointer text-neutral-700 hover:text-neutral-900">
-        Preview persona text — {label}
-      </summary>
-      <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap rounded-md border border-neutral-200 bg-neutral-50 p-3 font-sans text-xs text-neutral-800">
-        {text}
-      </pre>
-    </details>
-  );
 }
 
 function inputClass(disabled: boolean): string {
@@ -582,7 +498,6 @@ export function emptyValueForSchema(
     common: {
       facilitator_model: FACILITATOR_MODEL_OPTIONS[0],
       synthesis_model: SYNTHESIS_MODEL_OPTIONS[0],
-      ai_persona_id: "",
       facilitation_depth: "medium",
     },
     workflow_data,
