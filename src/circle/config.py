@@ -30,6 +30,7 @@ class AppConfig:
 
     secrets: Secrets
     sessions_dir: Path = field(default_factory=lambda: Path("config/sessions"))
+    personas_dir: Path = field(default_factory=lambda: Path("config/personas"))
     data_dir_base: Path = field(default_factory=lambda: Path("data"))
     syntheses_dir: Path = field(default_factory=lambda: Path("syntheses"))
     proposals_dir: Path = field(default_factory=lambda: Path("proposals"))
@@ -84,8 +85,16 @@ def load_app_config(*, require_ffmpeg: bool = True) -> AppConfig:
 
     config = AppConfig(secrets=secrets)
     config.sessions_dir.mkdir(parents=True, exist_ok=True)
+    config.personas_dir.mkdir(parents=True, exist_ok=True)
     config.data_dir_base.mkdir(parents=True, exist_ok=True)
     config.syntheses_dir.mkdir(parents=True, exist_ok=True)
     config.proposals_dir.mkdir(parents=True, exist_ok=True)
     config.revisions_dir.mkdir(parents=True, exist_ok=True)
+
+    # Make sure the baseline personas exist so the admin UI's persona
+    # picker is never empty on a fresh install.
+    from .personas import seed_default_personas
+
+    seed_default_personas(config.personas_dir)
+
     return config

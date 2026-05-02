@@ -40,6 +40,17 @@ from fastapi import (
 from fastapi.responses import FileResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
+from ..personas import (
+    InvalidPersonaIdError,
+    Persona,
+    PersonaError,
+    PersonaFileError,
+    delete_persona,
+    list_personas,
+    load_persona,
+    persona_path,
+    save_persona,
+)
 from ..registry import SessionRegistry
 from ..session import (
     CommonSettings,
@@ -68,6 +79,24 @@ from ..workflows import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def _count_participant_words(transcript: list[dict]) -> int:
+    """Total words contributed by the participant across all their turns.
+
+    Whitespace-split — same definition the admin would get from a quick
+    `wc -w`, no language-aware tokenization. Facilitator (assistant) turns
+    are excluded so the count reflects what the participant actually said.
+    """
+    total = 0
+    for turn in transcript:
+        if turn.get("role") != "user":
+            continue
+        content = turn.get("content")
+        if not isinstance(content, str):
+            continue
+        total += len(content.split())
+    return total
 
 
 # ---------------------------------------------------------------------------
@@ -136,6 +165,11 @@ class ParticipantSummary(BaseModel):
     started_at: str | None
     completed_at: str | None
     num_turns: int
+    # Words contributed by THIS participant only — facilitator turns are
+    # excluded. Useful as a proxy for how much they actually said vs. how
+    # many times they replied (a 23-turn participant who answers in three
+    # words each is very different from a 9-turn one writing paragraphs).
+    participant_word_count: int
     num_extracted_points: int
     num_additions: int
 
@@ -164,6 +198,28 @@ class ParticipantDetail(BaseModel):
     additions: list[dict]
 
 
+class PersonaResponse(BaseModel):
+    id: str
+    name: str
+    prompt: str
+    description: str = ""
+
+
+class CreatePersonaRequest(BaseModel):
+    id: str = Field(..., description="kebab/snake_case slug.")
+    name: str
+    prompt: str
+    description: str = ""
+
+
+class UpdatePersonaRequest(BaseModel):
+    """All fields optional — id is immutable."""
+
+    name: str | None = None
+    prompt: str | None = None
+    description: str | None = None
+
+
 class ErrorResponse(BaseModel):
     code: str
     error: str
@@ -190,6 +246,134 @@ def _build_router(registry: SessionRegistry) -> APIRouter:
             WorkflowTypeResponse(**schema.to_dict())
             for schema in WORKFLOW_TYPES.values()
         ]
+
+    # ------------------------------------------------------------------ personas
+    #
+    # Personas are managed independently of sessions. A session references one
+    # by id via `common.ai_persona_id`. We don't reject deletion of a persona
+    # that's in use; the runtime falls back to the workflow default in that
+    # case (see `circle.personas.resolve_persona_text`).
+
+    @router.get("/personas", response_model=list[PersonaResponse])
+    async def list_all_personas() -> list[PersonaResponse]:
+        return [
+            PersonaResponse(**p.to_dict())
+            for p in list_personas(registry.app_config.personas_dir)
+        ]
+
+    @router.post(
+        "/personas",
+        response_model=PersonaResponse,
+        responses={
+            400: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
+        },
+    )
+    async def create_persona(body: CreatePersonaRequest) -> PersonaResponse:
+        if persona_path(registry.app_config.personas_dir, body.id).exists():
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "persona_exists",
+                    "error": f"A persona with id {body.id!r} already exists.",
+                },
+            )
+        try:
+            persona = Persona(
+                id=body.id,
+                name=body.name,
+                prompt=body.prompt,
+                description=body.description,
+            )
+        except (InvalidPersonaIdError, PersonaError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "invalid_persona", "error": str(exc)},
+            )
+        save_persona(persona, registry.app_config.personas_dir)
+        logger.info("admin created persona id=%s", persona.id)
+        return PersonaResponse(**persona.to_dict())
+
+    @router.get(
+        "/personas/{persona_id}",
+        response_model=PersonaResponse,
+        responses={404: {"model": ErrorResponse}},
+    )
+    async def get_persona_detail(
+        persona_id: Annotated[str, PathParam(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")],
+    ) -> PersonaResponse:
+        try:
+            persona = load_persona(persona_id, registry.app_config.personas_dir)
+        except PersonaFileError:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "persona_not_found",
+                    "error": f"No persona {persona_id!r}",
+                },
+            )
+        return PersonaResponse(**persona.to_dict())
+
+    @router.patch(
+        "/personas/{persona_id}",
+        response_model=PersonaResponse,
+        responses={
+            400: {"model": ErrorResponse},
+            404: {"model": ErrorResponse},
+        },
+    )
+    async def patch_persona(
+        persona_id: Annotated[str, PathParam(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")],
+        body: UpdatePersonaRequest,
+    ) -> PersonaResponse:
+        try:
+            current = load_persona(persona_id, registry.app_config.personas_dir)
+        except PersonaFileError:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "persona_not_found",
+                    "error": f"No persona {persona_id!r}",
+                },
+            )
+        try:
+            updated = Persona(
+                id=current.id,
+                name=body.name if body.name is not None else current.name,
+                prompt=body.prompt if body.prompt is not None else current.prompt,
+                description=(
+                    body.description
+                    if body.description is not None
+                    else current.description
+                ),
+            )
+        except PersonaError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "invalid_persona", "error": str(exc)},
+            )
+        save_persona(updated, registry.app_config.personas_dir)
+        logger.info("admin updated persona id=%s", updated.id)
+        return PersonaResponse(**updated.to_dict())
+
+    @router.delete(
+        "/personas/{persona_id}",
+        responses={404: {"model": ErrorResponse}},
+    )
+    async def remove_persona(
+        persona_id: Annotated[str, PathParam(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")],
+    ) -> dict[str, Any]:
+        existed = delete_persona(persona_id, registry.app_config.personas_dir)
+        if not existed:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "persona_not_found",
+                    "error": f"No persona {persona_id!r}",
+                },
+            )
+        logger.info("admin deleted persona id=%s", persona_id)
+        return {"status": "ok"}
 
     # ------------------------------------------------------------------ sessions
 
@@ -452,6 +636,7 @@ def _build_router(registry: SessionRegistry) -> APIRouter:
             if raw is None:
                 continue
             pid = str(raw.get("participant_id") or path.stem)
+            transcript = raw.get("transcript", []) or []
             summaries[pid] = ParticipantSummary(
                 participant_id=pid,
                 participant_name=str(
@@ -461,7 +646,8 @@ def _build_router(registry: SessionRegistry) -> APIRouter:
                 status=str(raw.get("status", "")),
                 started_at=raw.get("started_at"),
                 completed_at=raw.get("completed_at"),
-                num_turns=len(raw.get("transcript", []) or []),
+                num_turns=len(transcript),
+                participant_word_count=_count_participant_words(transcript),
                 num_extracted_points=len(raw.get("extracted_points", []) or []),
                 num_additions=len(raw.get("additions", []) or []),
             )

@@ -7,8 +7,8 @@
     "facilitator_model": "claude-sonnet-4-5",
     "synthesis_model": "claude-opus-4-7",
     "language": "auto",
-    "expected_duration_minutes": 10,
-    "ai_persona": ""
+    "facilitation_depth": "medium",
+    "ai_persona_id": ""
   },
   "whisper": {
     "model": "medium",

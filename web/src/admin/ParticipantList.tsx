@@ -124,6 +124,7 @@ export function ParticipantList({ sessionId }: Props) {
                 <th className="px-3 py-2">Joined</th>
                 <th className="px-3 py-2 text-right">Total time</th>
                 <th className="px-3 py-2 text-right">Turns</th>
+                <th className="px-3 py-2 text-right">Words</th>
                 <th className="px-3 py-2 text-right">Points / Adds</th>
               </tr>
             </thead>
@@ -167,6 +168,9 @@ export function ParticipantList({ sessionId }: Props) {
                     </td>
                     <td className="px-3 py-2 text-right text-xs text-neutral-600">
                       {p.num_turns}
+                    </td>
+                    <td className="px-3 py-2 text-right text-xs text-neutral-600">
+                      {p.participant_word_count.toLocaleString()}
                     </td>
                     <td className="px-3 py-2 text-right text-xs text-neutral-600">
                       {p.num_extracted_points} / {p.num_additions}

@@ -61,14 +61,22 @@ class WhisperSettings:
         )
 
 
+FacilitationDepth = str  # one of: "minimal" | "medium" | "deep"
+_VALID_DEPTHS = frozenset({"minimal", "medium", "deep"})
+
+
 @dataclass(frozen=True)
 class CommonSettings:
-    facilitator_model: str = "claude-sonnet-4-5"
-    synthesis_model: str = "claude-opus-4-7"
+    facilitator_model: str = "claude-sonnet-4-6"
+    synthesis_model: str = "claude-opus-4-6"
     language: str = "auto"
-    expected_duration_minutes: int = 10
-    # Empty = use the workflow type's default persona.
-    ai_persona: str = ""
+    # Target conversation length. Drives a pacing block injected into the
+    # facilitator's system prompt; not a hard cap. See
+    # `circle.prompts.DEPTH_BLOCKS` for the exact text per setting.
+    facilitation_depth: FacilitationDepth = "medium"
+    # Slug reference into `config/personas/<id>.json`. Empty = fall back
+    # to the workflow type's `default_persona` (see `circle.workflows`).
+    ai_persona_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -76,12 +84,20 @@ class CommonSettings:
     @classmethod
     def from_dict(cls, raw: dict[str, Any] | None) -> "CommonSettings":
         raw = raw or {}
+        depth = str(raw.get("facilitation_depth", "medium")) or "medium"
+        if depth not in _VALID_DEPTHS:
+            depth = "medium"
+        # Backward compat: pre-personas configs stored a free-text
+        # `ai_persona` field. We don't try to migrate the text into a
+        # persona (that's an admin decision); we just drop it. New configs
+        # use `ai_persona_id`.
+        ai_persona_id = str(raw.get("ai_persona_id", "")).strip()
         return cls(
-            facilitator_model=str(raw.get("facilitator_model", "claude-sonnet-4-5")),
-            synthesis_model=str(raw.get("synthesis_model", "claude-opus-4-7")),
+            facilitator_model=str(raw.get("facilitator_model", "claude-sonnet-4-6")),
+            synthesis_model=str(raw.get("synthesis_model", "claude-opus-4-6")),
             language=str(raw.get("language", "auto")) or "auto",
-            expected_duration_minutes=int(raw.get("expected_duration_minutes", 10)),
-            ai_persona=str(raw.get("ai_persona", "")),
+            facilitation_depth=depth,
+            ai_persona_id=ai_persona_id,
         )
 
 

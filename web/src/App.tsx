@@ -4,6 +4,8 @@ import { Chat } from "./components/Chat";
 import { EditSession } from "./admin/EditSession";
 import { NewSession } from "./admin/NewSession";
 import { ParticipantDetail } from "./admin/ParticipantDetail";
+import { Personas } from "./admin/Personas";
+import { PersonaEdit } from "./admin/PersonaEdit";
 import { SessionList } from "./admin/SessionList";
 import { useRoute } from "./router";
 
@@ -54,6 +56,12 @@ export default function App() {
       document.title = "Tejido — new workflow";
     else if (route.name === "admin_edit_session")
       document.title = `Tejido — admin — ${route.sessionId}`;
+    else if (route.name === "admin_personas")
+      document.title = "Tejido — personas";
+    else if (route.name === "admin_new_persona")
+      document.title = "Tejido — new persona";
+    else if (route.name === "admin_edit_persona")
+      document.title = `Tejido — persona — ${route.personaId}`;
     else document.title = "Tejido";
   }, [route]);
 
@@ -68,6 +76,10 @@ export default function App() {
         participantId={route.participantId}
       />
     );
+  if (route.name === "admin_personas") return <Personas />;
+  if (route.name === "admin_new_persona") return <PersonaEdit personaId={null} />;
+  if (route.name === "admin_edit_persona")
+    return <PersonaEdit personaId={route.personaId} />;
   if (route.name === "session")
     return <ParticipantSession sessionId={route.sessionId} />;
   return <Welcome />;

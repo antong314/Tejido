@@ -21,6 +21,10 @@ export function AdminLayout({ children, title }: Props) {
           >
             Tejido admin
           </a>
+          <nav className="flex items-center gap-4 text-xs">
+            <NavLink href="/admin">Sessions</NavLink>
+            <NavLink href="/admin/personas">Personas</NavLink>
+          </nav>
           {title && (
             <span className="text-sm text-neutral-600">{title}</span>
           )}
@@ -40,5 +44,36 @@ export function AdminLayout({ children, title }: Props) {
         <div className="mx-auto max-w-4xl">{children}</div>
       </main>
     </div>
+  );
+}
+
+function NavLink({
+  href,
+  children,
+}: {
+  href: string;
+  children: ReactNode;
+}) {
+  // Treat the link as "active" when the current path is at or below this
+  // route's prefix. Cheap O(1) check, no need for a context.
+  const active =
+    typeof window !== "undefined" &&
+    (window.location.pathname === href ||
+      window.location.pathname.startsWith(href + "/"));
+  return (
+    <a
+      href={href}
+      onClick={(e) => {
+        e.preventDefault();
+        navigate(href);
+      }}
+      className={
+        active
+          ? "font-semibold text-neutral-900"
+          : "text-neutral-600 hover:text-neutral-900"
+      }
+    >
+      {children}
+    </a>
   );
 }

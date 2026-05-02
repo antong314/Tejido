@@ -18,6 +18,7 @@ from pathlib import Path
 
 from .anthropic_client import AnthropicClient
 from .config import AppConfig
+from .personas import resolve_persona_text
 from .prompts import render_facilitator_prompt
 from .session import Session
 from .state import ParticipantState, new_participant_state
@@ -27,7 +28,7 @@ from .storage import (
     save_participant,
 )
 from .whisper_client import WhisperTranscriber
-from .workflows import build_question_block, get_context, get_persona
+from .workflows import build_question_block, get_context, get_default_persona
 
 logger = logging.getLogger(__name__)
 
@@ -56,14 +57,21 @@ class BotContext:
     def facilitator_system_prompt(self) -> str:
         """Assemble the workflow-specific facilitator system prompt.
 
-        Persona + question_block + context + mechanics. Recomputed on
-        access so an admin edit to the session takes effect on the next
-        LLM call without restarting.
+        Persona + question_block + context + mechanics + depth pacing.
+        Recomputed on access so an admin edit to the session OR to the
+        referenced persona takes effect on the next LLM call without a
+        restart.
         """
+        persona_text = resolve_persona_text(
+            self.session.common.ai_persona_id,
+            self.app_config.personas_dir,
+            fallback=get_default_persona(self.session),
+        )
         return render_facilitator_prompt(
-            persona=get_persona(self.session),
+            persona=persona_text,
             question_block=build_question_block(self.session),
             context=get_context(self.session),
+            facilitation_depth=self.session.common.facilitation_depth,
         )
 
     @property

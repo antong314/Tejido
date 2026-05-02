@@ -22,12 +22,23 @@ export interface WorkflowSchema {
   ui: { side_panel?: string };
 }
 
+export type FacilitationDepth = "minimal" | "medium" | "deep";
+
 export interface CommonSettings {
   facilitator_model?: string;
   synthesis_model?: string;
   language?: string;
-  expected_duration_minutes?: number;
-  ai_persona?: string;
+  facilitation_depth?: FacilitationDepth;
+  // Slug reference into a Persona (see /api/admin/personas). Empty = use
+  // the workflow type's default_persona.
+  ai_persona_id?: string;
+}
+
+export interface Persona {
+  id: string;
+  name: string;
+  prompt: string;
+  description: string;
 }
 
 export interface WhisperSettings {
@@ -59,6 +70,9 @@ export interface ParticipantSummary {
   started_at: string | null;
   completed_at: string | null;
   num_turns: number;
+  // Words this participant contributed across all their turns. Facilitator
+  // turns excluded.
+  participant_word_count: number;
   num_extracted_points: number;
   num_additions: number;
 }

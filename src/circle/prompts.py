@@ -102,6 +102,36 @@ When in doubt between asking one more question and wrapping up a participant who
 """
 
 
+# Depth blocks — pacing guidance picked per session by the admin slider
+# (see `circle.session.CommonSettings.facilitation_depth`). Injected into
+# the facilitator prompt as the OPERATIVE pacing target for this session.
+# It supersedes the indicative ranges mentioned in MECHANICS.
+DEPTH_BLOCKS: dict[str, str] = {
+    "minimal": (
+        "Aim for a quick conversation: about 2-3 minutes total, 3-4 "
+        "questions at most. Get a fast read on the participant's gut "
+        "response, do one short reflection, and move toward "
+        "[READY_FOR_PERMISSIONS]. Don't probe deeply on tradeoffs. If "
+        "they want to keep going, they will say so — otherwise wrap up."
+    ),
+    "medium": (
+        "Aim for a 5-10 minute conversation: enough to surface their "
+        "position, explore one or two underlying values or tradeoffs, "
+        "and reflect once. Look for natural completion at the medium-"
+        "depth point — don't stretch the conversation to fill time, but "
+        "don't cut it short either."
+    ),
+    "deep": (
+        "Aim for a 10-20 minute conversation: give the participant room "
+        "to fully articulate their thinking, including tradeoffs, edge "
+        "cases, counterpositions, and uncertainties. Several rounds of "
+        "probing and reflection are appropriate. Don't rush; let the "
+        "conversation breathe. 20 minutes is the maximum — wrap up "
+        "before then if they signal they're done."
+    ),
+}
+
+
 FACILITATOR_SYSTEM_PROMPT_TEMPLATE = """\
 {PERSONA}
 
@@ -111,7 +141,10 @@ THE QUESTION BEING EXPLORED:
 CONTEXT (share only if asked):
 {CONTEXT}
 
-{MECHANICS}\
+{MECHANICS}
+
+CONVERSATION PACING (the operative target for THIS conversation — overrides any default duration mentioned above):
+{DEPTH_BLOCK}\
 """
 
 
@@ -334,6 +367,7 @@ def render_facilitator_prompt(
     *,
     persona: str | None = None,
     question_block: str | None = None,
+    facilitation_depth: str = "medium",
 ) -> str:
     """Assemble the facilitator system prompt.
 
@@ -346,7 +380,9 @@ def render_facilitator_prompt(
 
     The new keyword style is preferred — pass an explicit persona (workflow
     default or user override) and a question_block built by
-    `circle.workflows.build_question_block(session)`.
+    `circle.workflows.build_question_block(session)`. `facilitation_depth`
+    picks one of the DEPTH_BLOCKS pacing paragraphs; unknown values fall
+    back to "medium" so a stale config never breaks the LLM call.
     """
     if question_block is None:
         if question is None:
@@ -357,11 +393,13 @@ def render_facilitator_prompt(
         question_block = question
     if persona is None:
         persona = LEGACY_FACILITATOR_PERSONA
+    depth_block = DEPTH_BLOCKS.get(facilitation_depth, DEPTH_BLOCKS["medium"])
     return FACILITATOR_SYSTEM_PROMPT_TEMPLATE.format(
         PERSONA=persona.strip(),
         QUESTION_BLOCK=question_block,
         CONTEXT=context or "(none provided)",
         MECHANICS=FACILITATOR_MECHANICS,
+        DEPTH_BLOCK=depth_block,
     )
 
 

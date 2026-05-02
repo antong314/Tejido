@@ -29,11 +29,14 @@ def _build_client(test: unittest.TestCase) -> tuple[TestClient, AppConfig]:
 
     sessions_dir = root / "config" / "sessions"
     sessions_dir.mkdir(parents=True)
+    personas_dir = root / "config" / "personas"
+    personas_dir.mkdir(parents=True)
 
     secrets = Secrets(anthropic_api_key="t", telegram_bot_token="t")
     app_config = AppConfig(
         secrets=secrets,
         sessions_dir=sessions_dir,
+        personas_dir=personas_dir,
         data_dir_base=root / "data",
         syntheses_dir=root / "syntheses",
         proposals_dir=root / "proposals",
@@ -383,6 +386,110 @@ class OutputListingTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         names = [e["filename"] for e in r.json()]
         self.assertIn("synthesis_with_outputs_20260501.md", names)
+
+
+class PersonasCRUDTests(unittest.TestCase):
+    def test_list_seeded_personas(self) -> None:
+        # _build_client doesn't run config.load_app_config, so the personas
+        # dir starts empty. Seed it explicitly.
+        client, app_config = _build_client(self)
+        from circle.personas import seed_default_personas
+
+        app_config.personas_dir.mkdir(parents=True, exist_ok=True)
+        seed_default_personas(app_config.personas_dir)
+        r = client.get("/api/admin/personas")
+        self.assertEqual(r.status_code, 200, r.text)
+        ids = {p["id"] for p in r.json()}
+        self.assertEqual(
+            ids,
+            {
+                "open_discussion__default",
+                "decision_drafting__default",
+                "document_revision__default",
+            },
+        )
+
+    def test_create_get_update_delete_round_trip(self) -> None:
+        client, _ = _build_client(self)
+        # Create
+        r = client.post(
+            "/api/admin/personas",
+            json={
+                "id": "warm_coach",
+                "name": "Warm coach",
+                "description": "A patient, encouraging tone.",
+                "prompt": "You are a warm, patient facilitator.",
+            },
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        # Get
+        r = client.get("/api/admin/personas/warm_coach")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["name"], "Warm coach")
+        # Patch
+        r = client.patch(
+            "/api/admin/personas/warm_coach", json={"name": "Renamed"}
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["name"], "Renamed")
+        self.assertEqual(
+            r.json()["prompt"], "You are a warm, patient facilitator."
+        )
+        # Delete (idempotent: second call 404s)
+        r = client.delete("/api/admin/personas/warm_coach")
+        self.assertEqual(r.status_code, 200, r.text)
+        r2 = client.delete("/api/admin/personas/warm_coach")
+        self.assertEqual(r2.status_code, 404)
+
+    def test_create_409_on_dupe_id(self) -> None:
+        client, _ = _build_client(self)
+        for code in (200, 409):
+            r = client.post(
+                "/api/admin/personas",
+                json={
+                    "id": "dupe",
+                    "name": "x",
+                    "prompt": "you are dupe",
+                },
+            )
+            self.assertEqual(r.status_code, code, r.text)
+
+    def test_create_400_on_invalid_id(self) -> None:
+        client, _ = _build_client(self)
+        r = client.post(
+            "/api/admin/personas",
+            json={"id": "Has Spaces", "name": "x", "prompt": "p"},
+        )
+        self.assertEqual(r.status_code, 400)
+
+    def test_create_400_on_empty_prompt(self) -> None:
+        client, _ = _build_client(self)
+        r = client.post(
+            "/api/admin/personas",
+            json={"id": "blanky", "name": "x", "prompt": "   "},
+        )
+        self.assertEqual(r.status_code, 400)
+
+
+class FacilitatorPromptDepthTests(unittest.TestCase):
+    """The depth slider must surface in the rendered facilitator prompt."""
+
+    def test_depth_blocks_distinct(self) -> None:
+        from circle.prompts import DEPTH_BLOCKS, render_facilitator_prompt
+
+        for depth in ("minimal", "medium", "deep"):
+            out = render_facilitator_prompt(
+                question_block="Q?", facilitation_depth=depth
+            )
+            self.assertIn(DEPTH_BLOCKS[depth], out)
+
+    def test_unknown_depth_falls_back_to_medium(self) -> None:
+        from circle.prompts import DEPTH_BLOCKS, render_facilitator_prompt
+
+        out = render_facilitator_prompt(
+            question_block="Q?", facilitation_depth="forever"
+        )
+        self.assertIn(DEPTH_BLOCKS["medium"], out)
 
 
 if __name__ == "__main__":

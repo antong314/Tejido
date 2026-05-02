@@ -12,6 +12,9 @@ export type Route =
   | { name: "admin_new_session" }
   | { name: "admin_edit_session"; sessionId: string }
   | { name: "admin_participant"; sessionId: string; participantId: string }
+  | { name: "admin_personas" }
+  | { name: "admin_new_persona" }
+  | { name: "admin_edit_persona"; personaId: string }
   | { name: "welcome" };
 
 const PATTERNS: Array<{ test: RegExp; build: (m: RegExpExecArray) => Route }> = [
@@ -38,6 +41,20 @@ const PATTERNS: Array<{ test: RegExp; build: (m: RegExpExecArray) => Route }> = 
   {
     test: /^\/admin\/sessions\/([a-z0-9][a-z0-9_-]*)\/?$/,
     build: (m) => ({ name: "admin_edit_session", sessionId: m[1] }),
+  },
+  // Personas: /new comes BEFORE the bare /:id match so the "new" slug
+  // doesn't accidentally land on the edit route.
+  {
+    test: /^\/admin\/personas\/?$/,
+    build: () => ({ name: "admin_personas" }),
+  },
+  {
+    test: /^\/admin\/personas\/new\/?$/,
+    build: () => ({ name: "admin_new_persona" }),
+  },
+  {
+    test: /^\/admin\/personas\/([a-z0-9][a-z0-9_-]*)\/?$/,
+    build: (m) => ({ name: "admin_edit_persona", personaId: m[1] }),
   },
 ];
 

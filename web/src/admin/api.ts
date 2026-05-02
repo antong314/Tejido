@@ -6,6 +6,7 @@ import type {
   OutputFileEntry,
   ParticipantDetail,
   ParticipantSummary,
+  Persona,
   ProcessorName,
   WorkflowSchema,
 } from "./types";
@@ -124,4 +125,60 @@ export async function getParticipant(
   );
   if (!r.ok) throw await parseError(r);
   return r.json();
+}
+
+// ---------------------------------------------------------------------------
+// Personas — managed independently of sessions; sessions reference one by id.
+
+export async function listPersonas(): Promise<Persona[]> {
+  const r = await fetch("/api/admin/personas");
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export async function getPersona(id: string): Promise<Persona> {
+  const r = await fetch(`/api/admin/personas/${id}`);
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export interface CreatePersonaInput {
+  id: string;
+  name: string;
+  prompt: string;
+  description?: string;
+}
+
+export async function createPersona(input: CreatePersonaInput): Promise<Persona> {
+  const r = await fetch("/api/admin/personas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export interface UpdatePersonaInput {
+  name?: string;
+  prompt?: string;
+  description?: string;
+}
+
+export async function updatePersona(
+  id: string,
+  input: UpdatePersonaInput,
+): Promise<Persona> {
+  const r = await fetch(`/api/admin/personas/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export async function deletePersona(id: string): Promise<void> {
+  const r = await fetch(`/api/admin/personas/${id}`, { method: "DELETE" });
+  if (!r.ok) throw await parseError(r);
 }

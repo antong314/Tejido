@@ -128,7 +128,9 @@ class PerWorkflowExtractorTests(unittest.TestCase):
             id="test_x",
             title="Test",
             workflow_type=workflow_type,
-            common=CommonSettings(ai_persona=persona),
+            # The persona-by-id resolution happens at the runtime layer, not
+            # here. workflows.get_persona always returns the workflow default.
+            common=CommonSettings(),
             workflow_data=workflow_data,
         )
 
@@ -136,13 +138,15 @@ class PerWorkflowExtractorTests(unittest.TestCase):
         s = self._build("open_discussion", {"question": "Q?"})
         self.assertIn("thoughtful facilitator", get_persona(s).lower())
 
-    def test_get_persona_uses_override(self) -> None:
-        s = self._build(
-            "open_discussion",
-            {"question": "Q?"},
-            persona="You are a goose. Probe like one.",
+    def test_get_persona_returns_workflow_default(self) -> None:
+        # After personas became first-class objects, workflows.get_persona
+        # is the workflow default ONLY. The runtime layer is responsible for
+        # resolving the user-chosen persona by id (see runtime.BotContext).
+        s = self._build("open_discussion", {"question": "Q?"})
+        self.assertEqual(
+            get_persona(s),
+            WORKFLOW_TYPES["open_discussion"].default_persona,
         )
-        self.assertEqual(get_persona(s), "You are a goose. Probe like one.")
 
     def test_persona_per_workflow_default_is_distinct(self) -> None:
         # workflow_data is schema-validated, so each workflow gets a
@@ -252,7 +256,10 @@ class SessionDataclassTests(unittest.TestCase):
             id="round_trip",
             title="Round trip",
             workflow_type="open_discussion",
-            common=CommonSettings(ai_persona="Custom persona"),
+            common=CommonSettings(
+                ai_persona_id="my-custom-persona",
+                facilitation_depth="deep",
+            ),
             workflow_data={
                 "question": "Q?",
                 "context": "ctx",

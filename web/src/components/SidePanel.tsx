@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { renderMarkdown } from "../markdown";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface Props {
   title: string;
@@ -7,8 +8,9 @@ interface Props {
 }
 
 // Collapsible side panel rendered to the right of the chat for workflows
-// that declare ui.side_panel (currently only document_revision). Markdown
-// is rendered with our small in-house renderer to avoid a dep.
+// that declare ui.side_panel (currently only document_revision). Renders
+// the document via react-markdown so admins can paste in real markdown
+// (with tables, links, hr, etc.) and have it render the way they expect.
 
 export function SidePanel({ title, contentMd }: Props) {
   const [open, setOpen] = useState(true);
@@ -41,10 +43,9 @@ export function SidePanel({ title, contentMd }: Props) {
           hide
         </button>
       </div>
-      <div
-        className="prose-sm flex-1 overflow-y-auto px-5 py-4 text-sm text-neutral-800"
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(contentMd) }}
-      />
+      <article className="prose prose-sm prose-neutral max-w-none flex-1 overflow-y-auto px-5 py-4 prose-headings:mb-2 prose-headings:mt-4 prose-p:my-2">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{contentMd}</ReactMarkdown>
+      </article>
     </aside>
   );
 }

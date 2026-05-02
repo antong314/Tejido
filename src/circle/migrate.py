@@ -45,11 +45,11 @@ def _to_session(yaml_path: Path) -> Session:
     ).isoformat()
 
     common = CommonSettings(
-        facilitator_model=str(raw.get("facilitator_model", "claude-sonnet-4-5")),
-        synthesis_model=str(raw.get("synthesis_model", "claude-opus-4-7")),
+        facilitator_model=str(raw.get("facilitator_model", "claude-sonnet-4-6")),
+        synthesis_model=str(raw.get("synthesis_model", "claude-opus-4-6")),
         language=str(raw.get("language", "auto")) or "auto",
-        expected_duration_minutes=10,
-        ai_persona="",  # use the workflow default
+        facilitation_depth="medium",
+        ai_persona_id="",  # empty = use the workflow default
     )
 
     whisper_raw = raw.get("whisper") or {}

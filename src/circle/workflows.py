@@ -311,12 +311,24 @@ def validate_workflow_data(workflow_type: str, data: dict[str, Any]) -> None:
 # get a special case here.
 
 
-def get_persona(session: "Session") -> str:
-    """Custom persona if the admin set one, else the workflow default."""
-    persona = (session.common.ai_persona or "").strip()
-    if persona:
-        return persona
+def get_default_persona(session: "Session") -> str:
+    """The workflow type's built-in default persona for this session.
+
+    This is the fallback used when the session's `ai_persona_id` is empty
+    or points to a missing/invalid persona file. Persona resolution by id
+    happens in the runtime layer (see `circle.runtime.BotContext`) so this
+    module stays free of any filesystem dependency on `config/personas/`.
+    """
     return get_workflow(session.workflow_type).default_persona
+
+
+# Back-compat shim: older call sites used `get_persona(session)` to get the
+# resolved persona text. After personas became first-class objects, the
+# resolution requires a personas directory we can't see from here. Callers
+# that only need the workflow default can use `get_default_persona`; callers
+# needing the user-chosen persona should use
+# `circle.personas.resolve_persona_text(session.common.ai_persona_id, ...)`.
+get_persona = get_default_persona
 
 
 def build_question_block(session: "Session") -> str:
@@ -398,6 +410,7 @@ __all__ = [
     "build_question_block",
     "get_community_context",
     "get_context",
+    "get_default_persona",
     "get_persona",
     "get_synthesis_question",
     "get_workflow",

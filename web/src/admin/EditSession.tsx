@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
 import { navigate } from "../router";
 import { AdminLayout } from "./AdminLayout";
+import { OutputViewer } from "./OutputViewer";
 import { ParticipantList } from "./ParticipantList";
 import {
   SessionForm,
@@ -35,14 +36,25 @@ export function EditSession({ sessionId }: Props) {
   const [serverError, setServerError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  // Filename of the output the user is currently viewing in the modal,
+  // or null when the modal is closed.
+  const [viewerFilename, setViewerFilename] = useState<string | null>(null);
 
-  async function refreshOutputs() {
-    try {
-      setOutputs(await listOutputs(sessionId));
-    } catch {
-      /* non-fatal */
+  // Polling handle for the post-Run "watch outputs dir for the new file"
+  // loop. Held in a ref so unmount can cancel it cleanly.
+  const pollHandleRef = useRef<number | null>(null);
+
+  function stopPolling() {
+    if (pollHandleRef.current !== null) {
+      window.clearInterval(pollHandleRef.current);
+      pollHandleRef.current = null;
     }
   }
+
+  // Cancel any in-flight poll if the user navigates away mid-run.
+  useEffect(() => {
+    return () => stopPolling();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,22 +117,63 @@ export function EditSession({ sessionId }: Props) {
 
   async function handleRun() {
     if (!schema) return;
-    setRunning(true);
+    setServerError(null);
     setStatusMsg(null);
+    stopPolling();
+
+    // Snapshot the current output filenames so we can detect the new one
+    // when it lands. Comparing filenames (not list length) handles the
+    // edge case where another tab triggered a run in parallel.
+    const knownBefore = new Set(outputs.map((o) => o.filename));
+
+    setRunning(true);
     try {
-      const r = await runProcessor(sessionId, schema.processor);
-      setStatusMsg(
-        `${r.status}: ${schema.processor}. The output will appear below in a few seconds.`,
-      );
-      // Poll outputs once after a short delay so the new file shows up.
-      setTimeout(refreshOutputs, 6000);
+      await runProcessor(sessionId, schema.processor);
     } catch (e) {
-      setServerError(
-        e instanceof ApiError ? e.message : "Run failed.",
-      );
-    } finally {
       setRunning(false);
+      setServerError(e instanceof ApiError ? e.message : "Run failed.");
+      return;
     }
+    setStatusMsg(
+      `Running ${schema.processor}… the output will appear below as soon as it lands.`,
+    );
+
+    // Poll the outputs endpoint until a new file appears or we hit the
+    // timeout. 3-second cadence is fine — the run is admin-only and a
+    // typical synthesis takes 15-60s. Opus on a big bylaws session can
+    // push past two minutes; 5 minutes leaves comfortable headroom.
+    const POLL_MS = 3000;
+    const TIMEOUT_MS = 5 * 60 * 1000;
+    const startedAt = Date.now();
+
+    pollHandleRef.current = window.setInterval(async () => {
+      let fresh: OutputFileEntry[] = [];
+      try {
+        fresh = await listOutputs(sessionId);
+      } catch {
+        // Transient — try again on the next tick.
+        return;
+      }
+      const newOnes = fresh.filter((o) => !knownBefore.has(o.filename));
+      if (newOnes.length > 0) {
+        stopPolling();
+        setOutputs(fresh);
+        setRunning(false);
+        setStatusMsg(
+          `Done — ${schema.processor} produced ${newOnes[0].filename}.`,
+        );
+        window.setTimeout(() => setStatusMsg(null), 6000);
+        return;
+      }
+      if (Date.now() - startedAt > TIMEOUT_MS) {
+        stopPolling();
+        setRunning(false);
+        setStatusMsg(
+          `${schema.processor} is taking longer than 5 minutes. ` +
+            `Check the server log; refresh this page to pick it up when it lands.`,
+        );
+      }
+    }, POLL_MS);
   }
 
   return (
@@ -201,18 +254,32 @@ export function EditSession({ sessionId }: Props) {
                 </div>
                 <ul className="text-sm">
                   {outputs.map((o) => (
-                    <li key={o.filename} className="py-1">
-                      <a
-                        href={outputUrl(session.id, o.filename)}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-neutral-700 hover:text-neutral-900 hover:underline"
+                    <li
+                      key={o.filename}
+                      className="flex items-center justify-between gap-3 py-1"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setViewerFilename(o.filename)}
+                        className="truncate text-left text-neutral-700 hover:text-neutral-900 hover:underline"
+                        title="View rendered markdown"
                       >
                         {o.filename}
-                      </a>
-                      <span className="ml-2 text-xs text-neutral-500">
-                        {(o.bytes / 1024).toFixed(1)} kB
-                      </span>
+                      </button>
+                      <div className="flex shrink-0 items-center gap-3">
+                        <span className="text-xs text-neutral-500">
+                          {(o.bytes / 1024).toFixed(1)} kB
+                        </span>
+                        <a
+                          href={outputUrl(session.id, o.filename)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs text-neutral-500 hover:text-neutral-900"
+                          title="Open the raw .md file in a new tab"
+                        >
+                          raw ↗
+                        </a>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -251,6 +318,14 @@ export function EditSession({ sessionId }: Props) {
             </button>
           </div>
         </div>
+      )}
+
+      {viewerFilename && (
+        <OutputViewer
+          sessionId={sessionId}
+          filename={viewerFilename}
+          onClose={() => setViewerFilename(null)}
+        />
       )}
     </AdminLayout>
   );
