@@ -3,6 +3,7 @@ import { NameEntry } from "./components/NameEntry";
 import { Chat } from "./components/Chat";
 import { EditSession } from "./admin/EditSession";
 import { NewSession } from "./admin/NewSession";
+import { ParticipantDetail } from "./admin/ParticipantDetail";
 import { SessionList } from "./admin/SessionList";
 import { useRoute } from "./router";
 
@@ -60,6 +61,13 @@ export default function App() {
   if (route.name === "admin_new_session") return <NewSession />;
   if (route.name === "admin_edit_session")
     return <EditSession sessionId={route.sessionId} />;
+  if (route.name === "admin_participant")
+    return (
+      <ParticipantDetail
+        sessionId={route.sessionId}
+        participantId={route.participantId}
+      />
+    );
   if (route.name === "session")
     return <ParticipantSession sessionId={route.sessionId} />;
   return <Welcome />;

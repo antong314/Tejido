@@ -4,6 +4,8 @@ import { ApiError } from "../api";
 import type {
   AdminSession,
   OutputFileEntry,
+  ParticipantDetail,
+  ParticipantSummary,
   ProcessorName,
   WorkflowSchema,
 } from "./types";
@@ -103,4 +105,23 @@ export async function listOutputs(id: string): Promise<OutputFileEntry[]> {
 
 export function outputUrl(id: string, filename: string): string {
   return `/api/admin/sessions/${id}/outputs/${encodeURIComponent(filename)}`;
+}
+
+export async function listParticipants(
+  id: string,
+): Promise<ParticipantSummary[]> {
+  const r = await fetch(`/api/admin/sessions/${id}/participants`);
+  if (!r.ok) throw await parseError(r);
+  return r.json();
+}
+
+export async function getParticipant(
+  sessionId: string,
+  participantId: string,
+): Promise<ParticipantDetail> {
+  const r = await fetch(
+    `/api/admin/sessions/${sessionId}/participants/${participantId}`,
+  );
+  if (!r.ok) throw await parseError(r);
+  return r.json();
 }

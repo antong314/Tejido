@@ -251,6 +251,104 @@ class RunProcessorMismatchTests(unittest.TestCase):
         self.assertEqual(r.json()["detail"]["code"], "processor_mismatch")
 
 
+class ParticipantsAdminTests(unittest.TestCase):
+    """The admin endpoints that expose participants + their transcripts."""
+
+    def _make_session_and_participant(
+        self, client: TestClient, session_id: str = "smoke"
+    ) -> str:
+        client.post(
+            "/api/admin/sessions",
+            json={
+                "id": session_id,
+                "title": "x",
+                "workflow_type": "open_discussion",
+                "workflow_data": {"question": "Q?"},
+            },
+        )
+        # Use the participant-facing /join to materialize an actual
+        # ParticipantState file on disk; the admin endpoint reads from
+        # the same files.
+        r = client.post(
+            f"/api/s/{session_id}/join", json={"name": "Anton"}
+        )
+        assert r.status_code == 200, r.text
+        return r.json()["participant_id"]
+
+    def test_404_when_session_missing(self) -> None:
+        client, _ = _build_client(self)
+        r = client.get("/api/admin/sessions/nope/participants")
+        self.assertEqual(r.status_code, 404)
+
+    def test_empty_when_nobody_joined(self) -> None:
+        client, _ = _build_client(self)
+        client.post(
+            "/api/admin/sessions",
+            json={
+                "id": "empty_session",
+                "title": "x",
+                "workflow_type": "open_discussion",
+                "workflow_data": {"question": "Q?"},
+            },
+        )
+        r = client.get("/api/admin/sessions/empty_session/participants")
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json(), [])
+
+    def test_lists_after_join(self) -> None:
+        client, _ = _build_client(self)
+        pid = self._make_session_and_participant(client)
+        r = client.get("/api/admin/sessions/smoke/participants")
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(len(body), 1)
+        entry = body[0]
+        self.assertEqual(entry["participant_id"], pid)
+        self.assertEqual(entry["participant_name"], "Anton")
+        # /join transitions NOT_STARTED → AWAITING_CONSENT
+        self.assertEqual(entry["phase"], "awaiting_consent")
+        self.assertEqual(entry["num_turns"], 0)
+        self.assertEqual(entry["num_extracted_points"], 0)
+        self.assertEqual(entry["num_additions"], 0)
+
+    def test_detail_404_when_session_missing(self) -> None:
+        client, _ = _build_client(self)
+        r = client.get("/api/admin/sessions/nope/participants/whatever")
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.json()["detail"]["code"], "session_not_found")
+
+    def test_detail_404_when_participant_missing(self) -> None:
+        client, _ = _build_client(self)
+        client.post(
+            "/api/admin/sessions",
+            json={
+                "id": "with_session",
+                "title": "x",
+                "workflow_type": "open_discussion",
+                "workflow_data": {"question": "Q?"},
+            },
+        )
+        r = client.get(
+            "/api/admin/sessions/with_session/participants/no_such_pid"
+        )
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.json()["detail"]["code"], "participant_not_found")
+
+    def test_detail_returns_full_record(self) -> None:
+        client, _ = _build_client(self)
+        pid = self._make_session_and_participant(client)
+        r = client.get(f"/api/admin/sessions/smoke/participants/{pid}")
+        self.assertEqual(r.status_code, 200, r.text)
+        body = r.json()
+        self.assertEqual(body["participant_id"], pid)
+        self.assertEqual(body["participant_name"], "Anton")
+        self.assertEqual(body["session_id"], "smoke")
+        self.assertEqual(body["phase"], "awaiting_consent")
+        self.assertEqual(body["transcript"], [])
+        self.assertEqual(body["extracted_points"], [])
+        self.assertEqual(body["additions"], [])
+
+
 class OutputListingTests(unittest.TestCase):
     def test_outputs_empty_when_none_run(self) -> None:
         client, _ = _build_client(self)

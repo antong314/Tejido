@@ -53,6 +53,11 @@ from ..session import (
     save_session,
     session_path,
 )
+from ..storage import (
+    list_participant_files,
+    load_participant,
+    read_index,
+)
 from ..workflows import (
     UnknownWorkflowType,
     WORKFLOW_TYPES,
@@ -119,6 +124,44 @@ class OutputFileEntry(BaseModel):
     filename: str
     bytes: int
     created_at: str
+
+
+class ParticipantSummary(BaseModel):
+    """One row in the participants table the admin sees per session."""
+
+    participant_id: str
+    participant_name: str
+    phase: str
+    status: str
+    started_at: str | None
+    completed_at: str | None
+    num_turns: int
+    num_extracted_points: int
+    num_additions: int
+
+
+class ParticipantDetail(BaseModel):
+    """Full per-participant record. Includes the conversation transcript and
+    the extracted points + additions with their permission choices.
+
+    PRD §5.1 says participant conversations are not viewable during the
+    session. This admin endpoint is for after the fact (and admin-only,
+    because there's no auth gating it from the participant facing routes
+    yet — single-laptop deployment assumed). Consider locking down once
+    auth lands.
+    """
+
+    participant_id: str
+    participant_name: str
+    session_id: str
+    question: str
+    phase: str
+    status: str
+    started_at: str | None
+    completed_at: str | None
+    transcript: list[dict]
+    extracted_points: list[dict]
+    additions: list[dict]
 
 
 class ErrorResponse(BaseModel):
@@ -372,6 +415,113 @@ def _build_router(registry: SessionRegistry) -> APIRouter:
 
         background.add_task(_run)
         return RunResponse(status="started", processor=processor, session_id=session_id)
+
+    # ------------------------------------------------------------------ participants
+
+    @router.get(
+        "/sessions/{session_id}/participants",
+        response_model=list[ParticipantSummary],
+        responses={404: {"model": ErrorResponse}},
+    )
+    async def list_participants(
+        session_id: Annotated[str, PathParam(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")],
+    ) -> list[ParticipantSummary]:
+        # 404 if the session config doesn't exist; participant data may
+        # exist for it on disk regardless, but there's no point listing
+        # the participants of a session the admin can't open.
+        try:
+            from ..session import load_session as _load
+
+            _load(session_id, registry.app_config.sessions_dir)
+        except SessionFileError:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "session_not_found",
+                    "error": f"No session {session_id!r}",
+                },
+            )
+
+        data_dir = registry.app_config.data_dir_for(session_id)
+        # Index gives us a stable join order; fall back to scanning if the
+        # index is stale or missing.
+        index = read_index(data_dir)
+        summaries: dict[str, ParticipantSummary] = {}
+        for path in list_participant_files(data_dir):
+            raw = load_participant(data_dir, path.stem)
+            if raw is None:
+                continue
+            pid = str(raw.get("participant_id") or path.stem)
+            summaries[pid] = ParticipantSummary(
+                participant_id=pid,
+                participant_name=str(
+                    raw.get("participant_name") or index.get(pid) or pid
+                ),
+                phase=str(raw.get("phase", "")),
+                status=str(raw.get("status", "")),
+                started_at=raw.get("started_at"),
+                completed_at=raw.get("completed_at"),
+                num_turns=len(raw.get("transcript", []) or []),
+                num_extracted_points=len(raw.get("extracted_points", []) or []),
+                num_additions=len(raw.get("additions", []) or []),
+            )
+
+        # Order: index order first (preserves join order), then any
+        # on-disk participants the index doesn't know about.
+        ordered: list[ParticipantSummary] = []
+        for pid in index:
+            if pid in summaries:
+                ordered.append(summaries.pop(pid))
+        ordered.extend(summaries.values())
+        return ordered
+
+    @router.get(
+        "/sessions/{session_id}/participants/{participant_id}",
+        response_model=ParticipantDetail,
+        responses={404: {"model": ErrorResponse}},
+    )
+    async def get_participant(
+        session_id: Annotated[str, PathParam(pattern=r"^[a-z0-9][a-z0-9_-]{0,62}$")],
+        participant_id: Annotated[
+            str, PathParam(pattern=r"^[a-zA-Z0-9_-]+$")
+        ],
+    ) -> ParticipantDetail:
+        try:
+            from ..session import load_session as _load
+
+            _load(session_id, registry.app_config.sessions_dir)
+        except SessionFileError:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "session_not_found",
+                    "error": f"No session {session_id!r}",
+                },
+            )
+
+        data_dir = registry.app_config.data_dir_for(session_id)
+        raw = load_participant(data_dir, participant_id)
+        if raw is None:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "participant_not_found",
+                    "error": "No participant with that id in this session",
+                },
+            )
+        return ParticipantDetail(
+            participant_id=str(raw.get("participant_id", participant_id)),
+            participant_name=str(raw.get("participant_name", "")),
+            session_id=str(raw.get("session_id", session_id)),
+            question=str(raw.get("question", "")),
+            phase=str(raw.get("phase", "")),
+            status=str(raw.get("status", "")),
+            started_at=raw.get("started_at"),
+            completed_at=raw.get("completed_at"),
+            transcript=list(raw.get("transcript", []) or []),
+            extracted_points=list(raw.get("extracted_points", []) or []),
+            additions=list(raw.get("additions", []) or []),
+        )
 
     # ------------------------------------------------------------------ outputs
 

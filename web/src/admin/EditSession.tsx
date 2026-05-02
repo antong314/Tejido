@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ApiError } from "../api";
 import { navigate } from "../router";
 import { AdminLayout } from "./AdminLayout";
+import { ParticipantList } from "./ParticipantList";
 import {
   SessionForm,
   valueFromSession,
@@ -169,6 +170,8 @@ export function EditSession({ sessionId }: Props) {
               </div>
             </div>
           </div>
+
+          <ParticipantList sessionId={sessionId} />
 
           <div className="rounded-lg border border-neutral-200 bg-white p-5">
             <div className="flex items-start justify-between gap-4">

@@ -11,6 +11,7 @@ export type Route =
   | { name: "admin_home" }
   | { name: "admin_new_session" }
   | { name: "admin_edit_session"; sessionId: string }
+  | { name: "admin_participant"; sessionId: string; participantId: string }
   | { name: "welcome" };
 
 const PATTERNS: Array<{ test: RegExp; build: (m: RegExpExecArray) => Route }> = [
@@ -22,6 +23,17 @@ const PATTERNS: Array<{ test: RegExp; build: (m: RegExpExecArray) => Route }> = 
   {
     test: /^\/admin\/sessions\/new\/?$/,
     build: () => ({ name: "admin_new_session" }),
+  },
+  {
+    // Note: /participants/<pid> match comes BEFORE the bare /:id match
+    // so we don't accidentally read "sessions/<id>/participants" as the
+    // session-id portion.
+    test: /^\/admin\/sessions\/([a-z0-9][a-z0-9_-]*)\/participants\/([a-zA-Z0-9_-]+)\/?$/,
+    build: (m) => ({
+      name: "admin_participant",
+      sessionId: m[1],
+      participantId: m[2],
+    }),
   },
   {
     test: /^\/admin\/sessions\/([a-z0-9][a-z0-9_-]*)\/?$/,
