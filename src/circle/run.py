@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 
 import uvicorn
@@ -47,7 +48,7 @@ async def _run_combined(args: argparse.Namespace) -> None:
     app_config = load_app_config()
     whisper = WhisperTranscriber(
         model_name="medium",
-        models_dir="models/",
+        models_dir=app_config.models_dir,
     )
     registry = SessionRegistry(app_config=app_config, whisper=whisper)
 
@@ -90,8 +91,14 @@ def main() -> None:
             "Telegram binding."
         )
     )
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    # Defaults are loopback-only on a developer laptop (the admin UI
+    # has no auth — keep it off the LAN). In a deployment, the
+    # container's environment sets $HOST=0.0.0.0 and $PORT=<paas-port>
+    # via the Dockerfile / Railway config so we bind correctly.
+    default_host = os.environ.get("HOST", "127.0.0.1")
+    default_port = int(os.environ.get("PORT", "8000"))
+    parser.add_argument("--host", default=default_host)
+    parser.add_argument("--port", type=int, default=default_port)
     args = parser.parse_args()
 
     _configure_logging()

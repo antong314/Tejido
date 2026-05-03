@@ -57,7 +57,7 @@ def main() -> None:
     # become lazy if startup time matters more than first-call latency.
     whisper = WhisperTranscriber(
         model_name="medium",
-        models_dir="models/",
+        models_dir=app_config.models_dir,
     )
     registry = SessionRegistry(app_config=app_config, whisper=whisper)
     app = create_app(registry=registry)

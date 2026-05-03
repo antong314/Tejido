@@ -292,6 +292,75 @@ If you want the server reachable from another device on your LAN
 (e.g. someone on a phone in the same room): `--host 0.0.0.0`. There's
 no auth on the admin UI — see "Privacy" below.
 
+## Deploy to Railway
+
+The repo includes a `Dockerfile` that builds a self-contained image
+(Python + node-built React bundle + ffmpeg + Whisper). It expects:
+
+1. **A persistent volume mounted at `/data`.** Without it, every redeploy
+   wipes admin edits, transcripts, and the cached Whisper model. Create
+   a Railway Volume in the service settings and mount it at `/data`.
+2. **Two environment variables**:
+   - `ANTHROPIC_API_KEY` — your Anthropic key.
+   - `TELEGRAM_BOT_TOKEN` — your Telegram token. (Required even if you
+     never bind Telegram from the admin UI; can be a placeholder.)
+3. **A public domain.** Railway gives you one for free. Participants get
+   `https://your-app.up.railway.app/s/<session-id>`; admin lives at
+   `https://your-app.up.railway.app/admin`.
+
+Steps:
+
+1. Push the repo to GitHub (or wherever).
+2. Create a new Railway service from the repo. Railway will detect the
+   `Dockerfile` and build automatically.
+3. In the service's **Variables** tab, add `ANTHROPIC_API_KEY` and
+   `TELEGRAM_BOT_TOKEN`.
+4. In the **Volumes** tab, create a 5–10 GB volume mounted at `/data`.
+5. Deploy. First boot takes a few minutes (downloads the ~1.5 GB
+   Whisper model into `/data/models/`); subsequent boots are fast.
+
+What lives where on the volume:
+
+```
+/data/
+    config/sessions/        ← admin-managed session JSONs
+    config/contexts/        ← Context Library entries
+    config/workflows/       ← admin-edited prompt overrides
+    config/telegram.json    ← which session Telegram is bound to
+    data/<session_id>/...   ← per-participant transcripts
+    syntheses/              ← synthesis output markdown
+    proposals/              ← proposal output markdown
+    revisions/              ← revise output markdown
+    models/                 ← Whisper weights cache
+```
+
+The image's bundled `config/sessions/`, `config/contexts/`, and
+`config/workflows/` get **seeded onto the volume on first boot only** —
+admin edits via the UI then become the source of truth. New sessions
+or contexts you push to the repo via git **won't** show up on
+subsequent deploys; you'd recreate them through the admin UI on the
+deployed instance.
+
+Things to know going in:
+
+- **Voice transcription will be slow.** Whisper-medium runs on whatever
+  CPU Railway gives you — expect 30-90s per voice message on a hobby
+  tier. Plenty for testing; consider a beefier plan for real use, or
+  hand-edit the `WhisperTranscriber(model_name="...")` call to drop to
+  `small` or `base` for a speed/accuracy tradeoff.
+- **Telegram polling works for one container instance.** If you scale
+  beyond one replica, Telegram revokes the token because two pollers
+  fight for the same bot. Stay at 1 replica or switch to webhook mode
+  (not implemented yet).
+- **No admin authentication.** The `/admin` URL is open to anyone who
+  knows it. Put it behind a Railway-side basic-auth proxy, share the
+  URL only with the facilitator, and don't post screenshots that show
+  the URL bar.
+- **Local dev still works.** `python -m circle.run` keeps using the
+  repo-relative `config/`, `data/`, etc. paths and binds 127.0.0.1 by
+  default — only the Docker container has `TEJIDO_DATA_ROOT=/data` and
+  `HOST=0.0.0.0` in its environment.
+
 ## Participant flow
 
 Same state machine for both web and Telegram channels:

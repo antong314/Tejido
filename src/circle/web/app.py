@@ -29,6 +29,7 @@ Admin REST endpoints live in `circle.web.admin` and are mounted by
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -506,10 +507,20 @@ def create_app(
         _require_participant(context, participant_id)
 
         async def event_stream() -> AsyncIterator[bytes]:
+            # Heartbeat keeps the connection alive through edge proxies
+            # (Railway, Cloudflare, nginx, etc.) that aggressively close
+            # idle connections. SSE comment lines (starting with ":")
+            # are silently discarded by EventSource clients but count as
+            # traffic for proxy idle-timeout purposes. 15s is well below
+            # the 30-60s timeouts most proxies use.
             async with sse_hub.subscribe(participant_id) as queue:
                 yield b"event: ready\ndata: {}\n\n"
                 while True:
-                    event = await queue.get()
+                    try:
+                        event = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    except asyncio.TimeoutError:
+                        yield b": keepalive\n\n"
+                        continue
                     yield f"data: {json.dumps(event)}\n\n".encode("utf-8")
 
         return StreamingResponse(

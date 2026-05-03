@@ -1,0 +1,43 @@
+# Anything we don't need inside the image — keeps the build context
+# small and prevents accidental secret leaks via COPY.
+
+# Python venv + caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node deps + build artifacts (rebuilt fresh inside the web-builder stage)
+web/node_modules/
+web/dist/
+
+# Local-only state (the runtime points TEJIDO_DATA_ROOT at /data)
+data/
+syntheses/
+proposals/
+revisions/
+models/
+config/telegram.json
+
+# Editor + OS
+.DS_Store
+.vscode/
+.idea/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Git itself + CI
+.git/
+.github/
+.gitignore
+
+# Tests aren't needed at runtime
+tests/
+
+# Documentation
+*.md
+!README.md
