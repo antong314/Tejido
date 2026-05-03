@@ -60,7 +60,20 @@ class WhisperTranscriber:
             print_progress=False,
             print_realtime=False,
         )
-        self._n_threads = max(1, (os.cpu_count() or 4) - 1)
+        # WHISPER_THREADS env var wins. Otherwise default to a cgroup-aware
+        # count, capped at 4 — whisper.cpp gets diminishing returns past
+        # that, and on shared-vCPU hosts os.cpu_count() reports the host's
+        # cores (not the fraction the container owns), so a naive default
+        # spawns 30+ threads on fractional CPU and thrashes catastrophically.
+        env_threads = os.environ.get("WHISPER_THREADS", "").strip()
+        if env_threads:
+            self._n_threads = max(1, int(env_threads))
+        else:
+            try:
+                available = len(os.sched_getaffinity(0))
+            except AttributeError:  # macOS, Windows
+                available = os.cpu_count() or 4
+            self._n_threads = max(1, min(4, available - 1))
 
     async def transcribe_audio(self, audio_path: Path) -> TranscriptionResult:
         """Transcribe an audio file in any format ffmpeg understands.
