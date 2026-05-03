@@ -292,13 +292,13 @@ export function SessionForm({
             <button
               type="button"
               onClick={() => navigate("/admin/contexts")}
-              className="shrink-0 rounded-md border border-neutral-300 bg-white px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-50"
+              className="shrink-0 rounded-md border border-a-border bg-a-bg-card px-3 py-2 text-xs text-a-ink hover:bg-a-bg-subtle"
             >
               Manage
             </button>
           </div>
           {contextsError && (
-            <p className="mt-1 text-xs text-amber-700">{contextsError}</p>
+            <p className="mt-1 text-xs text-pill-pending">{contextsError}</p>
           )}
           <Hint>
             Reusable community-context blob (shared values, prior decisions,
@@ -309,7 +309,7 @@ export function SessionForm({
         </Field>
 
         <Field label="Workflow prompts">
-          <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
+          <div className="rounded-md border border-a-border bg-a-bg-subtle px-3 py-2 text-xs text-a-ink">
             The task framing, output template, and conversation mechanics
             for <strong>{schema.label}</strong> are managed at the workflow
             level — every session of this type inherits them.
@@ -317,7 +317,7 @@ export function SessionForm({
           <button
             type="button"
             onClick={() => navigate(`/admin/workflows/${schema.type}`)}
-            className="mt-2 text-xs font-medium text-neutral-700 hover:text-neutral-900"
+            className="mt-2 text-xs font-medium text-a-ink hover:text-a-ink"
           >
             Edit {schema.label.toLowerCase()} prompts →
           </button>
@@ -339,7 +339,7 @@ export function SessionForm({
             disabled={submitting}
             className="w-full accent-neutral-900"
           />
-          <div className="mt-1 flex justify-between text-[10px] uppercase tracking-wide text-neutral-500">
+          <div className="mt-1 flex justify-between text-[10px] uppercase tracking-wide text-a-ink-muted">
             {DEPTH_LEVELS.map((d, i) => (
               <button
                 key={d.key}
@@ -348,16 +348,16 @@ export function SessionForm({
                 disabled={submitting}
                 className={
                   i === depthIndex
-                    ? "font-semibold text-neutral-900"
-                    : "hover:text-neutral-900"
+                    ? "font-semibold text-a-ink"
+                    : "hover:text-a-ink"
                 }
               >
                 {d.label}
               </button>
             ))}
           </div>
-          <div className="mt-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
-            <span className="font-medium text-neutral-900">{depthDef.label}.</span>{" "}
+          <div className="mt-2 rounded-md border border-a-border bg-a-bg-subtle px-3 py-2 text-xs text-a-ink">
+            <span className="font-medium text-a-ink">{depthDef.label}.</span>{" "}
             {depthDef.blurb}
           </div>
           <Hint>
@@ -369,7 +369,7 @@ export function SessionForm({
       </Section>
 
       {(localError || serverError) && (
-        <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-md bg-pill-private-bg p-3 text-sm text-pill-private">
           {localError ?? serverError}
         </div>
       )}
@@ -378,7 +378,7 @@ export function SessionForm({
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          className="rounded-md bg-a-accent px-4 py-2 text-sm font-medium text-white hover:bg-a-accent-dark disabled:opacity-50"
         >
           {submitting ? "Saving…" : submitLabel}
         </button>
@@ -387,7 +387,7 @@ export function SessionForm({
             type="button"
             onClick={onCancel}
             disabled={submitting}
-            className="text-sm text-neutral-600 hover:text-neutral-900"
+            className="text-sm text-a-ink-muted hover:text-a-ink"
           >
             Cancel
           </button>
@@ -417,9 +417,9 @@ function withCurrent(
 
 function inputClass(disabled: boolean): string {
   return [
-    "block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm shadow-sm",
+    "block w-full rounded-md border border-a-border px-3 py-2 text-sm shadow-sm",
     "focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500",
-    disabled ? "bg-neutral-100 text-neutral-500 cursor-not-allowed" : "bg-white",
+    disabled ? "bg-a-bg-subtle text-a-ink-muted cursor-not-allowed" : "bg-a-bg-card",
   ].join(" ");
 }
 
@@ -431,8 +431,8 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-5">
-      <h2 className="text-sm font-semibold text-neutral-900">{title}</h2>
+    <section className="rounded-md border border-a-border bg-a-bg-card p-5">
+      <h2 className="text-sm font-semibold text-a-ink">{title}</h2>
       <div className="mt-4 space-y-4">{children}</div>
     </section>
   );
@@ -447,7 +447,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-medium uppercase tracking-wide text-neutral-600">
+      <span className="text-xs font-medium uppercase tracking-wide text-a-ink-muted">
         {label}
       </span>
       <div className="mt-1.5">{children}</div>
@@ -456,7 +456,7 @@ function Field({
 }
 
 function Hint({ children }: { children: React.ReactNode }) {
-  return <p className="mt-1 text-xs text-neutral-500">{children}</p>;
+  return <p className="mt-1 text-xs text-a-ink-muted">{children}</p>;
 }
 
 function FieldRender({
@@ -520,7 +520,7 @@ function FieldRender({
                 type="button"
                 onClick={() => onChange(list.filter((_, j) => j !== i))}
                 disabled={disabled}
-                className="text-xs text-neutral-500 hover:text-red-700"
+                className="text-xs text-a-ink-muted hover:text-pill-private"
               >
                 remove
               </button>
@@ -530,7 +530,7 @@ function FieldRender({
             type="button"
             onClick={() => onChange([...list, ""])}
             disabled={disabled}
-            className="text-xs font-medium text-neutral-700 hover:text-neutral-900"
+            className="text-xs font-medium text-a-ink hover:text-a-ink"
           >
             + add item
           </button>

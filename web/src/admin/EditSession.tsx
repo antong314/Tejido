@@ -179,24 +179,24 @@ export function EditSession({ sessionId }: Props) {
   return (
     <AdminLayout title={session?.title ?? sessionId}>
       {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+        <div className="mb-4 rounded-md bg-pill-private-bg p-3 text-[13px] text-pill-private">
           {error}
         </div>
       )}
 
       {!session && !error && (
-        <div className="text-sm text-neutral-500">Loading…</div>
+        <div className="text-[13px] text-a-ink-muted">Loading…</div>
       )}
 
       {session && schema && (
-        <div className="space-y-6">
-          <div className="rounded-lg border border-neutral-200 bg-white p-5">
+        <div className="space-y-4">
+          <div className="rounded-md border border-a-border bg-a-bg-card px-5 py-4 shadow-card">
             <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-sm font-semibold text-neutral-900">
+              <div className="min-w-0">
+                <h2 className="text-[13px] font-semibold text-a-ink">
                   Participant URL
                 </h2>
-                <div className="mt-1 break-all font-mono text-xs text-neutral-700">
+                <div className="mt-1 break-all font-mono text-[13px] tracking-[-0.2px] text-a-ink">
                   {window.location.origin}/s/{session.id}
                 </div>
               </div>
@@ -208,7 +208,7 @@ export function EditSession({ sessionId }: Props) {
                       `${window.location.origin}/s/${session.id}`,
                     )
                   }
-                  className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-50"
+                  className="rounded-sm border border-a-border bg-a-bg-card px-3 py-1.5 text-[11px] font-medium text-a-ink transition-colors hover:bg-a-bg-subtle"
                 >
                   Copy
                 </button>
@@ -216,7 +216,7 @@ export function EditSession({ sessionId }: Props) {
                   href={`/s/${session.id}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-50"
+                  className="rounded-sm border border-a-border bg-a-bg-card px-3 py-1.5 text-[11px] font-medium text-a-ink transition-colors hover:bg-a-bg-subtle"
                 >
                   Open ↗
                 </a>
@@ -226,55 +226,64 @@ export function EditSession({ sessionId }: Props) {
 
           <ParticipantList sessionId={sessionId} />
 
-          <div className="rounded-lg border border-neutral-200 bg-white p-5">
+          <div className="rounded-md border border-a-border bg-a-bg-card px-5 py-4 shadow-card">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-sm font-semibold text-neutral-900">
+                <h2 className="text-[13px] font-semibold text-a-ink">
                   Run {schema.processor}
                 </h2>
-                <p className="mt-1 text-xs text-neutral-600">
+                <p className="mt-1 text-[12px] leading-[1.5] text-a-ink-muted">
                   Generates the {schema.processor} output for every
-                  participant who has reached <code>complete</code>.
+                  participant who has reached{" "}
+                  <code className="rounded-sm bg-a-bg-subtle px-1 py-0.5 font-mono text-[11px]">
+                    complete
+                  </code>
+                  .
                 </p>
               </div>
               <button
                 type="button"
                 onClick={handleRun}
                 disabled={running}
-                className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+                className="shrink-0 rounded-sm bg-a-accent px-4 py-2 text-[12px] font-medium text-white transition-colors hover:bg-a-accent-dark disabled:cursor-default disabled:opacity-50"
               >
                 {running ? "Running…" : `Run ${schema.processor}`}
               </button>
             </div>
 
             {outputs.length > 0 && (
-              <div className="mt-4 border-t border-neutral-200 pt-3">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-neutral-600">
+              <div className="mt-4 border-t border-a-border pt-3">
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-[0.07em] text-a-ink-faint">
                   Past outputs
                 </div>
-                <ul className="text-sm">
-                  {outputs.map((o) => (
+                <ul>
+                  {outputs.map((o, i) => (
                     <li
                       key={o.filename}
-                      className="flex items-center justify-between gap-3 py-1"
+                      className={[
+                        "flex items-center justify-between gap-3 py-1.5",
+                        i < outputs.length - 1
+                          ? "border-b border-a-border"
+                          : "",
+                      ].join(" ")}
                     >
                       <button
                         type="button"
                         onClick={() => setViewerFilename(o.filename)}
-                        className="truncate text-left text-neutral-700 hover:text-neutral-900 hover:underline"
+                        className="truncate text-left font-mono text-[12px] text-a-accent transition-colors hover:text-a-accent-dark"
                         title="View rendered markdown"
                       >
                         {o.filename}
                       </button>
                       <div className="flex shrink-0 items-center gap-3">
-                        <span className="text-xs text-neutral-500">
+                        <span className="text-[11px] text-a-ink-faint">
                           {(o.bytes / 1024).toFixed(1)} kB
                         </span>
                         <a
                           href={outputUrl(session.id, o.filename)}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-xs text-neutral-500 hover:text-neutral-900"
+                          className="text-[11px] text-a-ink-faint transition-colors hover:text-a-ink"
                           title="Open the raw .md file in a new tab"
                         >
                           raw ↗
@@ -288,7 +297,7 @@ export function EditSession({ sessionId }: Props) {
           </div>
 
           {statusMsg && (
-            <div className="rounded-md bg-green-50 p-3 text-sm text-green-800">
+            <div className="rounded-md bg-pill-complete-bg p-3 text-[13px] text-pill-complete">
               {statusMsg}
             </div>
           )}
@@ -302,17 +311,23 @@ export function EditSession({ sessionId }: Props) {
             serverError={serverError}
           />
 
-          <div className="rounded-lg border border-red-200 bg-red-50 p-5">
-            <h3 className="text-sm font-semibold text-red-900">Danger zone</h3>
-            <p className="mt-1 text-xs text-red-800">
+          <div className="rounded-md border border-[oklch(85%_0.06_15)] bg-[oklch(99%_0.01_15)] px-5 py-4">
+            <h3 className="text-[13px] font-semibold text-pill-private">
+              Danger zone
+            </h3>
+            <p className="mt-1 text-[12px] leading-[1.5] text-pill-private/80">
               Deleting only removes the session config. Participant data
-              under <code>data/{session.id}/</code> stays on disk so you
-              can still run the processors against it later.
+              under{" "}
+              <code className="rounded-sm bg-[oklch(96%_0.02_15)] px-1 py-0.5 font-mono text-[11px]">
+                data/{session.id}/
+              </code>{" "}
+              stays on disk so you can still run the processors against
+              it later.
             </p>
             <button
               type="button"
               onClick={handleDelete}
-              className="mt-3 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100"
+              className="mt-3 rounded-sm border border-[oklch(80%_0.10_15)] bg-a-bg-card px-3 py-1.5 text-[12px] font-medium text-pill-private transition-colors hover:bg-pill-private-bg"
             >
               Delete session
             </button>

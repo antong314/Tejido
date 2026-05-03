@@ -38,7 +38,7 @@ export function WorkflowTypes() {
 
   return (
     <AdminLayout title="Workflows">
-      <p className="mb-4 text-sm text-neutral-600">
+      <p className="mb-4 text-sm text-a-ink-muted">
         Each workflow type ships with a built-in task framing (the "what
         kind of conversation" wrapper), output template (the post-
         conversation processor prompt), and conversation mechanics. Any
@@ -47,13 +47,13 @@ export function WorkflowTypes() {
       </p>
 
       {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+        <div className="mb-4 rounded-md bg-pill-private-bg p-3 text-sm text-pill-private">
           {error}
         </div>
       )}
 
       {workflows === null && !error && (
-        <div className="text-sm text-neutral-500">Loading…</div>
+        <div className="text-sm text-a-ink-muted">Loading…</div>
       )}
 
       {workflows && workflows.length > 0 && (
@@ -63,31 +63,31 @@ export function WorkflowTypes() {
             return (
               <li
                 key={w.type}
-                className="cursor-pointer rounded-lg border border-neutral-200 bg-white p-5 hover:border-neutral-400 hover:shadow-sm"
+                className="cursor-pointer rounded-md border border-a-border bg-a-bg-card p-5 hover:border-a-border-focus hover:shadow-sm"
                 onClick={() => navigate(`/admin/workflows/${w.type}`)}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <h3 className="text-base font-semibold text-neutral-900">
+                      <h3 className="text-base font-semibold text-a-ink">
                         {w.label}
                       </h3>
-                      <code className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] text-neutral-600">
+                      <code className="rounded bg-a-bg-subtle px-1.5 py-0.5 font-mono text-[10px] text-a-ink-muted">
                         {w.type}
                       </code>
                       {overrideCount > 0 && (
                         <span
                           title="This workflow has admin-edited prompt overrides"
-                          className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800"
+                          className="rounded-pill bg-pill-pending-bg px-2 py-0.5 text-[10px] font-medium text-pill-pending"
                         >
                           {overrideCount} edited
                         </span>
                       )}
                     </div>
-                    <p className="mt-1 text-sm text-neutral-600">
+                    <p className="mt-1 text-sm text-a-ink-muted">
                       {w.description}
                     </p>
-                    <p className="mt-2 text-xs text-neutral-500">
+                    <p className="mt-2 text-xs text-a-ink-muted">
                       Output processor: <code>{w.processor}</code> ·{" "}
                       Field count: {w.fields.length}
                     </p>
@@ -98,7 +98,7 @@ export function WorkflowTypes() {
                       e.stopPropagation();
                       navigate(`/admin/workflows/${w.type}`);
                     }}
-                    className="shrink-0 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-50"
+                    className="shrink-0 rounded-md border border-a-border bg-a-bg-card px-3 py-1.5 text-xs text-a-ink hover:bg-a-bg-subtle"
                   >
                     Edit
                   </button>

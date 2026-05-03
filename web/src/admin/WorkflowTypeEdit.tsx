@@ -138,25 +138,29 @@ export function WorkflowTypeEdit({ workflowType }: Props) {
             e.preventDefault();
             navigate("/admin/workflows");
           }}
-          className="text-xs text-neutral-600 hover:text-neutral-900"
+          className="text-[12px] text-a-ink-muted transition-colors hover:text-a-ink"
         >
           ← back to workflows
         </a>
       </div>
 
-      <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-5">
+      <div className="mb-4 rounded-md border border-a-border bg-a-bg-card px-5 py-4 shadow-card">
         <div className="flex items-center gap-2">
-          <h2 className="text-base font-semibold text-neutral-900">
+          <h2 className="font-p-display text-[20px] font-normal text-a-ink">
             {schema.label}
           </h2>
-          <code className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] text-neutral-600">
+          <code className="rounded-sm bg-a-bg-subtle px-1.5 py-0.5 font-mono text-[10px] text-a-ink-muted">
             {schema.type}
           </code>
         </div>
-        <p className="mt-1 text-sm text-neutral-600">{schema.description}</p>
-        <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
+        <p className="mt-1 text-[13px] text-a-ink-muted">
+          {schema.description}
+        </p>
+        <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-[12px]">
           <Meta label="Output processor">
-            <code>{schema.processor}</code>
+            <code className="rounded-sm bg-a-bg-subtle px-1 py-0.5 font-mono text-[11px]">
+              {schema.processor}
+            </code>
           </Meta>
           <Meta label="Form fields">{schema.fields.length}</Meta>
         </dl>
@@ -208,10 +212,12 @@ export function WorkflowTypeEdit({ workflowType }: Props) {
 
       {(saveError || statusMsg) && (
         <div
-          className={
-            "mt-6 rounded-md p-3 text-sm "
-            + (saveError ? "bg-red-50 text-red-700" : "bg-green-50 text-green-800")
-          }
+          className={[
+            "mt-6 rounded-md p-3 text-[13px]",
+            saveError
+              ? "bg-pill-private-bg text-pill-private"
+              : "bg-pill-complete-bg text-pill-complete",
+          ].join(" ")}
         >
           {saveError ?? statusMsg}
         </div>
@@ -222,7 +228,7 @@ export function WorkflowTypeEdit({ workflowType }: Props) {
           type="button"
           onClick={handleSave}
           disabled={saving || !dirty}
-          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          className="rounded-sm bg-a-accent px-4 py-2 text-[13px] font-medium text-white transition-colors hover:bg-a-accent-dark disabled:cursor-default disabled:opacity-50"
         >
           {saving ? "Saving…" : dirty ? "Save changes" : "Saved"}
         </button>
@@ -230,7 +236,7 @@ export function WorkflowTypeEdit({ workflowType }: Props) {
           type="button"
           onClick={() => navigate("/admin/workflows")}
           disabled={saving}
-          className="text-sm text-neutral-600 hover:text-neutral-900"
+          className="text-[13px] text-a-ink-muted transition-colors hover:text-a-ink"
         >
           Back
         </button>
@@ -260,19 +266,21 @@ function PromptField({
 }) {
   const usingDefault = !draft.override.trim();
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-5">
+    <section className="rounded-md border border-a-border bg-a-bg-card px-5 py-4 shadow-card">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-neutral-900">{label}</h3>
-          <p className="mt-1 text-xs text-neutral-600">{description}</p>
+          <h3 className="text-[13px] font-semibold text-a-ink">{label}</h3>
+          <p className="mt-1 text-[12px] leading-[1.55] text-a-ink-muted">
+            {description}
+          </p>
         </div>
         <span
-          className={
-            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium "
-            + (usingDefault
-              ? "bg-neutral-100 text-neutral-600"
-              : "bg-amber-100 text-amber-800")
-          }
+          className={[
+            "shrink-0 rounded-pill px-2 py-0.5 text-[10px] font-semibold tracking-[0.03em]",
+            usingDefault
+              ? "bg-a-bg-subtle text-a-ink-faint"
+              : "bg-pill-pending-bg text-pill-pending",
+          ].join(" ")}
         >
           {usingDefault ? "Using default" : "Overridden"}
         </span>
@@ -286,15 +294,20 @@ function PromptField({
         }
         disabled={disabled}
         placeholder={defaultValue}
-        className="mt-3 block w-full rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-xs leading-relaxed text-neutral-800 shadow-sm focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500 disabled:bg-neutral-100"
+        className={[
+          "mt-3 block w-full rounded-sm px-3 py-2 font-mono text-[12px] leading-[1.6] text-a-ink outline-none transition-[border-color,background] placeholder:text-a-ink-faint focus:border-a-border-focus disabled:opacity-60",
+          usingDefault
+            ? "border border-a-border bg-a-bg-subtle"
+            : "border border-a-border-focus bg-a-bg-card",
+        ].join(" ")}
       />
 
       <div className="mt-2 flex items-center justify-between">
-        <details className="text-xs text-neutral-600">
-          <summary className="cursor-pointer hover:text-neutral-900">
+        <details className="text-[11px] text-a-ink-muted">
+          <summary className="cursor-pointer transition-colors hover:text-a-ink">
             Show default ({defaultValue.length.toLocaleString()} chars)
           </summary>
-          <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-md border border-neutral-200 bg-neutral-50 p-3 font-sans text-xs text-neutral-700">
+          <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap rounded-sm border border-a-border bg-a-bg-subtle p-3 font-sans text-[12px] leading-[1.6] text-a-ink-muted">
             {defaultValue}
           </pre>
         </details>
@@ -303,7 +316,7 @@ function PromptField({
             type="button"
             onClick={() => onChange({ override: "", initial: draft.initial })}
             disabled={disabled}
-            className="text-xs text-neutral-500 hover:text-neutral-900"
+            className="text-[11px] text-a-ink-muted transition-colors hover:text-a-ink"
           >
             Reset to default
           </button>
@@ -322,10 +335,10 @@ function Meta({
 }) {
   return (
     <div>
-      <dt className="font-medium uppercase tracking-wide text-neutral-500">
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.07em] text-a-ink-faint">
         {label}
       </dt>
-      <dd className="mt-0.5 text-neutral-800">{children}</dd>
+      <dd className="mt-1 text-[12px] text-a-ink">{children}</dd>
     </div>
   );
 }

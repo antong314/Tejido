@@ -225,12 +225,56 @@ export function Chat({ sessionId, participantId, displayName, onResetIdentity }:
     return "Type your reply…";
   })();
 
+  // During the permissions walk-through, surface the participant's
+  // progress as a thin terracotta bar at the top of the scroll area —
+  // gives them a sense of "almost done" without yet another widget.
+  // The "current" point is the one with no resolved permission yet.
+  let permissionsProgress: { current: number; total: number } | null = null;
+  if (phase === "in_permissions") {
+    const total = messages.reduce(
+      (acc, m) =>
+        acc + m.content.filter((p) => p.type === "choice_prompt").length,
+      0,
+    );
+    const resolvedCount = messages.reduce(
+      (acc, m) =>
+        acc +
+        m.content.filter((p) => p.type === "choice_prompt" && p.resolved).length,
+      0,
+    );
+    if (total > 0) {
+      permissionsProgress = {
+        current: Math.min(resolvedCount + 1, total),
+        total,
+      };
+    }
+  }
+
   // Extracted as local elements so the split and drawer layouts can both
   // reference them without duplicating the JSX. Both close over the same
   // state, so this stays cheap.
   const messagesScroll = (
     <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-8">
-      <div className="mx-auto max-w-2xl space-y-5">
+      <div className="mx-auto max-w-[560px] space-y-5">
+        {permissionsProgress && (
+          <div className="pb-2">
+            <div className="mb-2 text-[12px] font-medium text-p-ink-muted">
+              Point {permissionsProgress.current} of {permissionsProgress.total}
+            </div>
+            <div className="h-[3px] w-full overflow-hidden rounded-sm bg-p-border">
+              <div
+                className="h-full rounded-sm bg-p-accent transition-[width] duration-[400ms] ease-out"
+                style={{
+                  width: `${
+                    ((permissionsProgress.current - 1) /
+                      permissionsProgress.total) *
+                    100
+                  }%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
         {messages.map((m) => (
           <MessageBubble
             key={m.id}
@@ -240,10 +284,13 @@ export function Chat({ sessionId, participantId, displayName, onResetIdentity }:
           />
         ))}
         {typing && (
+          // Three bouncing dots. Animations are defined in tailwind.config.js
+          // as named delays so we don't need arbitrary [animation-delay:...]
+          // values here.
           <div className="flex items-center gap-1.5 px-2">
-            <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:0ms]" />
-            <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:150ms]" />
-            <span className="inline-block h-2 w-2 animate-bounce rounded-full bg-neutral-400 [animation-delay:300ms]" />
+            <span className="inline-block h-2 w-2 animate-bounce-dot-1 rounded-full bg-p-ink-faint" />
+            <span className="inline-block h-2 w-2 animate-bounce-dot-2 rounded-full bg-p-ink-faint" />
+            <span className="inline-block h-2 w-2 animate-bounce-dot-3 rounded-full bg-p-ink-faint" />
           </div>
         )}
       </div>
@@ -253,9 +300,9 @@ export function Chat({ sessionId, participantId, displayName, onResetIdentity }:
   const inputForm = (
     <form
       onSubmit={handleSend}
-      className="border-t border-neutral-200 bg-white px-4 py-3"
+      className="border-t border-p-border bg-p-bg-card px-6 pb-4 pt-3"
     >
-      <div className="mx-auto flex max-w-2xl items-end gap-2">
+      <div className="mx-auto flex max-w-[560px] items-end gap-2">
         <textarea
           ref={inputRef}
           value={draft}
@@ -269,7 +316,7 @@ export function Chat({ sessionId, participantId, displayName, onResetIdentity }:
               handleSend(e);
             }
           }}
-          className="flex-1 resize-none rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500 disabled:bg-neutral-100 disabled:text-neutral-500"
+          className="flex-1 resize-none rounded-md border-[1.5px] border-p-border bg-p-bg px-3.5 py-2.5 text-[14px] leading-[1.5] text-p-ink outline-none transition-[border-color,box-shadow] placeholder:text-p-ink-faint focus:border-p-border-focus focus:shadow-[0_0_0_3px_var(--p-accent-tint)] disabled:bg-p-bg-subtle disabled:text-p-ink-faint"
         />
         <MicButton
           sessionId={sessionId}
@@ -282,13 +329,13 @@ export function Chat({ sessionId, participantId, displayName, onResetIdentity }:
         <button
           type="submit"
           disabled={inputDisabled || !draft.trim()}
-          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          className="h-11 rounded-md bg-p-accent px-[18px] text-[13px] font-medium text-white transition-colors hover:bg-p-accent-dark disabled:cursor-default disabled:opacity-50"
         >
           Send
         </button>
       </div>
       {error && (
-        <div className="mx-auto mt-2 max-w-2xl text-xs text-red-600">
+        <div className="mx-auto mt-2 max-w-[560px] text-xs text-pill-private">
           {error}
         </div>
       )}
@@ -297,14 +344,22 @@ export function Chat({ sessionId, participantId, displayName, onResetIdentity }:
 
   const isSplit = sidePanel?.layout === "split";
 
+  // The completion phase replaces the chat entirely with a calm
+  // full-viewport thank-you screen. The transcript stays in the
+  // session's data dir if the participant ever needs to reference what
+  // they said, but the UI doesn't dwell on it.
+  if (phase === "complete") {
+    return <CompletionScreen displayName={displayName} onResetIdentity={onResetIdentity} />;
+  }
+
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex items-center justify-between border-b border-neutral-200 bg-white/80 backdrop-blur px-6 py-3">
-        <div className="text-sm font-medium text-neutral-900">{displayName}</div>
+    <div className="flex h-full flex-col bg-p-bg">
+      <header className="flex h-12 items-center justify-between border-b border-p-border bg-[oklch(98.5%_0.006_75/0.9)] px-6 backdrop-blur">
+        <div className="text-[13px] font-medium text-p-ink">{displayName}</div>
         <button
           type="button"
           onClick={onResetIdentity}
-          className="text-xs text-neutral-500 hover:text-neutral-800"
+          className="text-[12px] text-p-ink-faint transition-colors hover:text-p-ink-muted"
           title="Switch identity (clears your local link to this conversation)"
         >
           Sign out
@@ -358,16 +413,18 @@ function MessageBubble({
 }) {
   const isUser = message.role === "user";
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`flex animate-fade-in ${isUser ? "justify-end" : "justify-start"}`}>
       <div
         className={[
           isUser
-            ? "max-w-[85%] rounded-2xl px-4 py-3 text-[15px] leading-relaxed bg-neutral-900 text-white"
-            // Assistant messages render edge-to-edge within the
-            // centered column, no card chrome — cleaner reading rhythm
-            // and a feel closer to a long-form conversation than a
-            // chatroom of stacked bubbles.
-            : "max-w-full text-[15px] leading-relaxed text-neutral-800",
+            // User: dark warm-charcoal bubble with the iMessage-style
+            // pinched bottom-right corner. Uses inline arbitrary radius
+            // because Tailwind doesn't have asymmetric rounded utilities.
+            ? "max-w-[82%] rounded-[20px_20px_4px_20px] bg-p-bubble-user px-4 py-3 text-[15px] leading-[1.65] text-p-bubble-text"
+            // Assistant: edge-to-edge plain text, no bubble — feels
+            // closer to long-form conversation than a chatroom of
+            // stacked bubbles.
+            : "max-w-full text-[15px] leading-[1.75] text-p-ink",
         ].join(" ")}
       >
         {message.content.map((part, i) => {
@@ -396,8 +453,94 @@ function MessageBubble({
               />
             );
           }
+          if (part.type === "question_callout") {
+            return (
+              <div
+                key={i}
+                className="my-1 rounded-md border-l-[3px] border-p-accent bg-p-bg-card px-5 py-4 font-p-display text-[17px] italic leading-snug text-p-ink"
+              >
+                {part.text}
+              </div>
+            );
+          }
           return null;
         })}
+      </div>
+    </div>
+  );
+}
+
+// Completion screen — shown when phase === "complete". Replaces the
+// chat entirely so the participant gets a clean exit signal instead of
+// staring at a frozen disabled input. Calm, centered, terracotta wave
+// motif as a small visual punctuation.
+function CompletionScreen({
+  displayName,
+  onResetIdentity,
+}: {
+  displayName: string;
+  onResetIdentity: () => void;
+}) {
+  return (
+    <div className="flex h-full flex-col bg-p-bg">
+      <header className="flex h-12 items-center justify-between border-b border-p-border bg-[oklch(98.5%_0.006_75/0.9)] px-6 backdrop-blur">
+        <div className="text-[13px] font-medium text-p-ink">{displayName}</div>
+        <button
+          type="button"
+          onClick={onResetIdentity}
+          className="text-[12px] text-p-ink-faint transition-colors hover:text-p-ink-muted"
+          title="Switch identity (clears your local link to this conversation)"
+        >
+          Sign out
+        </button>
+      </header>
+      <div className="flex flex-1 items-center justify-center px-8 text-center">
+        <div className="max-w-[440px]">
+          {/* Three crossing wave paths in terracotta — a small
+              visual punctuation, matches the brand's "weaving" metaphor. */}
+          <svg
+            width="68"
+            height="48"
+            viewBox="0 0 68 48"
+            fill="none"
+            className="mx-auto mb-6"
+            aria-hidden="true"
+          >
+            <path
+              d="M2 32 Q 17 12, 34 24 T 66 16"
+              stroke="var(--p-accent)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              opacity="0.85"
+            />
+            <path
+              d="M2 24 Q 17 36, 34 24 T 66 32"
+              stroke="var(--p-accent)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              opacity="0.55"
+            />
+            <path
+              d="M2 16 Q 17 28, 34 16 T 66 24"
+              stroke="var(--p-accent)"
+              strokeWidth="2"
+              strokeLinecap="round"
+              opacity="0.35"
+            />
+          </svg>
+
+          <h1 className="font-p-display text-[30px] font-normal leading-tight tracking-[-0.3px] text-p-ink">
+            That's it. Thank you.
+          </h1>
+          <p className="mt-3 text-[15px] leading-[1.7] text-p-ink-muted">
+            We'll come back together when everyone has finished. Your
+            choices about what's shared have been recorded — only what
+            you said could be shared will be.
+          </p>
+          <p className="mt-6 text-[13px] text-p-ink-faint">
+            You can close this tab.
+          </p>
+        </div>
       </div>
     </div>
   );

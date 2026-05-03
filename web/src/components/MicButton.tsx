@@ -216,11 +216,11 @@ export function MicButton({ sessionId, participantId, disabled, onTranscribed }:
         disabled={disabled || busy}
         title={recording ? "Stop and send" : "Hold a voice message"}
         className={[
-          "flex h-10 w-10 items-center justify-center rounded-full transition",
+          "flex h-11 w-11 items-center justify-center rounded-full transition",
           recording
-            ? "bg-red-600 text-white animate-pulse"
-            : "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50",
-          (disabled || busy) && "opacity-50 cursor-not-allowed",
+            ? "animate-pulse bg-pill-private text-white"
+            : "border-[1.5px] border-p-border bg-p-bg-card text-p-ink-muted hover:border-p-border-focus hover:text-p-ink",
+          (disabled || busy) && "cursor-not-allowed opacity-50",
         ]
           .filter(Boolean)
           .join(" ")}
@@ -245,16 +245,16 @@ export function MicButton({ sessionId, participantId, disabled, onTranscribed }:
         </svg>
       </button>
       {recording && (
-        <div className="mt-1 text-xs text-red-600 tabular-nums">
+        <div className="mt-1 text-xs tabular-nums text-pill-private">
           {String(Math.floor(elapsedSec / 60)).padStart(2, "0")}:
           {String(elapsedSec % 60).padStart(2, "0")}
         </div>
       )}
       {busy && status === "uploading" && (
-        <div className="mt-1 text-xs text-neutral-500">Sending…</div>
+        <div className="mt-1 text-xs text-p-ink-muted">Sending…</div>
       )}
       {status === "error" && error && (
-        <div className="mt-1 max-w-[200px] text-xs text-red-600 text-center">
+        <div className="mt-1 max-w-[200px] text-center text-xs text-pill-private">
           {error}
         </div>
       )}

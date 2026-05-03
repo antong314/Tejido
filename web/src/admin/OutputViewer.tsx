@@ -68,7 +68,7 @@ export function OutputViewer({ sessionId, filename, onClose }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-900/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[oklch(20%_0.01_260/0.4)] p-4"
       onClick={(e) => {
         // Click on the backdrop (not the dialog itself) closes.
         if (e.target === e.currentTarget) onClose();
@@ -76,11 +76,11 @@ export function OutputViewer({ sessionId, filename, onClose }: Props) {
     >
       <div
         ref={dialogRef}
-        className="flex h-full max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-neutral-300 bg-white shadow-xl"
+        className="flex h-full max-h-[90vh] w-full max-w-[680px] animate-modal-in flex-col overflow-hidden rounded-lg border border-a-border bg-a-bg-card shadow-modal"
       >
-        <header className="flex items-center justify-between gap-4 border-b border-neutral-200 px-5 py-3">
+        <header className="flex items-center justify-between gap-4 border-b border-a-border px-5 py-3">
           <div className="min-w-0">
-            <div className="truncate font-mono text-xs text-neutral-600">
+            <div className="truncate font-mono text-[12px] text-a-ink-muted">
               {filename}
             </div>
           </div>
@@ -89,7 +89,7 @@ export function OutputViewer({ sessionId, filename, onClose }: Props) {
               type="button"
               onClick={handleCopy}
               disabled={!content}
-              className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-50 disabled:opacity-50"
+              className="rounded-sm border border-a-border bg-a-bg-card px-3 py-1.5 text-[11px] font-medium text-a-ink transition-colors hover:bg-a-bg-subtle disabled:opacity-50"
             >
               Copy markdown
             </button>
@@ -97,31 +97,45 @@ export function OutputViewer({ sessionId, filename, onClose }: Props) {
               href={outputUrl(sessionId, filename)}
               target="_blank"
               rel="noreferrer"
-              className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs text-neutral-800 hover:bg-neutral-50"
+              className="rounded-sm border border-a-border bg-a-bg-card px-3 py-1.5 text-[11px] font-medium text-a-ink transition-colors hover:bg-a-bg-subtle"
             >
               Open raw ↗
             </a>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-800"
+              className="rounded-sm bg-a-accent px-3 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-a-accent-dark"
             >
               Close
             </button>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto bg-neutral-50 px-6 py-5">
+        <div className="flex-1 overflow-y-auto bg-a-bg-subtle px-9 py-7">
           {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+            <div className="rounded-md bg-pill-private-bg p-3 text-[13px] text-pill-private">
               {error}
             </div>
           )}
           {!error && content === null && (
-            <div className="text-sm text-neutral-500">Loading…</div>
+            <div className="text-[13px] text-a-ink-muted">Loading…</div>
           )}
           {content !== null && (
-            <article className="prose prose-sm prose-neutral max-w-none prose-headings:mb-3 prose-headings:mt-6 prose-headings:font-semibold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-p:my-3 prose-li:my-1 prose-hr:my-6">
+            <article
+              // Custom typography for the synthesis/proposal/revise output.
+              // h1 is DM Serif Display (matches the brand), h2 is Inter
+              // Tight uppercase to read like section labels in a report.
+              className={[
+                "prose prose-sm prose-neutral max-w-none text-a-ink",
+                "prose-h1:font-p-display prose-h1:text-[24px] prose-h1:font-normal prose-h1:tracking-[-0.3px] prose-h1:leading-tight prose-h1:mb-5 prose-h1:mt-0",
+                "prose-h2:font-admin prose-h2:text-[14px] prose-h2:font-semibold prose-h2:uppercase prose-h2:tracking-[0.07em] prose-h2:mb-2 prose-h2:mt-6",
+                "prose-h3:text-[14px] prose-h3:font-semibold prose-h3:mb-2 prose-h3:mt-5",
+                "prose-p:text-[14px] prose-p:leading-[1.75] prose-p:my-3.5",
+                "prose-li:text-[14px] prose-li:leading-[1.7] prose-li:my-1.5",
+                "prose-strong:text-a-ink",
+                "prose-hr:border-a-border prose-hr:my-5",
+              ].join(" ")}
+            >
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {content}
               </ReactMarkdown>

@@ -59,21 +59,21 @@ export function NewSession() {
   return (
     <AdminLayout title="New workflow">
       {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+        <div className="mb-4 rounded-md bg-pill-private-bg p-3 text-sm text-pill-private">
           {error}
         </div>
       )}
 
       {step.kind === "loading" && (
-        <div className="text-sm text-neutral-500">Loading…</div>
+        <div className="text-sm text-a-ink-muted">Loading…</div>
       )}
 
       {step.kind === "pick" && (
         <div>
-          <h2 className="text-base font-medium text-neutral-900">
+          <h2 className="text-base font-medium text-a-ink">
             Pick a workflow type
           </h2>
-          <p className="mt-1 text-sm text-neutral-600">
+          <p className="mt-1 text-sm text-a-ink-muted">
             Each type uses a different AI persona, asks different questions,
             and produces a different output. You can edit any of these
             details afterward.
@@ -84,15 +84,15 @@ export function NewSession() {
                 key={t.type}
                 type="button"
                 onClick={() => setStep({ kind: "form", schema: t })}
-                className="rounded-lg border border-neutral-200 bg-white p-4 text-left hover:border-neutral-400 hover:shadow-sm"
+                className="rounded-md border border-a-border bg-a-bg-card p-4 text-left hover:border-a-border-focus hover:shadow-sm"
               >
-                <div className="text-sm font-semibold text-neutral-900">
+                <div className="text-sm font-semibold text-a-ink">
                   {t.label}
                 </div>
-                <div className="mt-1 text-xs text-neutral-600">
+                <div className="mt-1 text-xs text-a-ink-muted">
                   {t.description}
                 </div>
-                <div className="mt-3 text-xs text-neutral-500">
+                <div className="mt-3 text-xs text-a-ink-muted">
                   → {t.processor}
                 </div>
               </button>
@@ -106,14 +106,14 @@ export function NewSession() {
           <button
             type="button"
             onClick={() => setStep({ kind: "pick" })}
-            className="mb-4 text-xs text-neutral-600 hover:text-neutral-900"
+            className="mb-4 text-xs text-a-ink-muted hover:text-a-ink"
           >
             ← back to picker
           </button>
-          <h2 className="text-base font-medium text-neutral-900">
+          <h2 className="text-base font-medium text-a-ink">
             New {step.schema.label}
           </h2>
-          <p className="mt-1 mb-5 text-sm text-neutral-600">
+          <p className="mt-1 mb-5 text-sm text-a-ink-muted">
             {step.schema.description}
           </p>
           <SessionForm

@@ -84,30 +84,30 @@ export function TelegramCard({ sessions, onBindingChange }: Props) {
   const boundSession = bound ? sessions.find((s) => s.id === bound) : null;
 
   return (
-    <div className="mb-6 rounded-lg border border-neutral-200 bg-white p-5">
+    <div className="mb-4 rounded-md border border-a-border bg-a-bg-card px-5 py-4 shadow-card">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-sm font-semibold text-neutral-900">
+          <h2 className="text-[13px] font-semibold text-a-ink">
             Telegram bot
           </h2>
-          <p className="mt-1 text-xs text-neutral-600">
+          <p className="mt-1 text-[12px] leading-[1.55] text-a-ink-muted">
             One session at a time. Telegram has a single bot token, so all
             incoming Telegram messages get routed to the chosen session
             until you change it here. The setting persists across restarts.
           </p>
         </div>
-        <div className="shrink-0 text-right text-xs">
-          <div className="uppercase tracking-wide text-neutral-500">
+        <div className="shrink-0 text-right text-[11px]">
+          <div className="font-semibold uppercase tracking-[0.07em] text-a-ink-faint">
             Currently
           </div>
-          <div className="mt-0.5 font-medium text-neutral-900">
+          <div className="mt-1 text-[13px] font-medium text-a-ink">
             {bound ? (
               <>
                 <span className="mr-1">🤖</span>
                 {boundSession?.title || bound}
               </>
             ) : (
-              <span className="text-neutral-500">unbound</span>
+              <span className="text-a-ink-faint">unbound</span>
             )}
           </div>
         </div>
@@ -118,7 +118,7 @@ export function TelegramCard({ sessions, onBindingChange }: Props) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           disabled={saving}
-          className="flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500 disabled:bg-neutral-100"
+          className="flex-1 rounded-sm border border-a-border bg-a-bg-card px-3 py-2 text-[13px] text-a-ink outline-none focus:border-a-border-focus disabled:bg-a-bg-subtle"
         >
           <option value="">— Unbound (Telegram off) —</option>
           {sessions.map((s) => (
@@ -131,7 +131,7 @@ export function TelegramCard({ sessions, onBindingChange }: Props) {
           type="button"
           onClick={handleApply}
           disabled={saving || !dirty}
-          className="rounded-md bg-neutral-900 px-3 py-2 text-xs font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+          className="rounded-sm bg-a-accent px-4 py-2 text-[12px] font-medium text-white transition-colors hover:bg-a-accent-dark disabled:cursor-default disabled:opacity-50"
         >
           {saving
             ? "Applying…"
@@ -144,7 +144,7 @@ export function TelegramCard({ sessions, onBindingChange }: Props) {
       </div>
 
       {saveError && (
-        <div className="mt-2 rounded-md bg-red-50 p-2 text-xs text-red-700">
+        <div className="mt-2 rounded-sm bg-pill-private-bg p-2 text-[12px] text-pill-private">
           {saveError}
         </div>
       )}

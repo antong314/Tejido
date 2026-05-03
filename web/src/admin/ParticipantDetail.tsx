@@ -3,6 +3,7 @@ import { ApiError } from "../api";
 import { navigate } from "../router";
 import { AdminLayout } from "./AdminLayout";
 import { getParticipant } from "./api";
+import { PhasePill } from "./PhasePill";
 import type { ParticipantDetail as DetailT } from "./types";
 
 interface Props {
@@ -10,31 +11,24 @@ interface Props {
   participantId: string;
 }
 
-const PHASE_LABEL: Record<string, string> = {
-  not_started: "not started",
-  awaiting_consent: "awaiting consent",
-  in_conversation: "in conversation",
-  in_permissions: "in permissions",
-  awaiting_addition: "awaiting addition",
-  in_addition_permissions: "addition permissions",
-  complete: "complete",
-};
-
 const PERMISSION_BADGE: Record<
   "attributed" | "anonymous" | "private",
-  { label: string; cls: string }
+  { label: string; bg: string; color: string }
 > = {
   attributed: {
     label: "By name",
-    cls: "bg-emerald-100 text-emerald-800",
+    bg: "bg-pill-complete-bg",
+    color: "text-pill-complete",
   },
   anonymous: {
     label: "Anonymous",
-    cls: "bg-amber-100 text-amber-800",
+    bg: "bg-pill-pending-bg",
+    color: "text-pill-pending",
   },
   private: {
     label: "Private",
-    cls: "bg-red-100 text-red-800",
+    bg: "bg-pill-private-bg",
+    color: "text-pill-private",
   },
 };
 
@@ -76,60 +70,63 @@ export function ParticipantDetail({ sessionId, participantId }: Props) {
             e.preventDefault();
             navigate(`/admin/sessions/${sessionId}`);
           }}
-          className="text-xs text-neutral-600 hover:text-neutral-900"
+          className="text-[12px] text-a-ink-muted transition-colors hover:text-a-ink"
         >
           ← back to session
         </a>
       </div>
 
       {error && (
-        <div className="mb-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+        <div className="mb-4 rounded-md bg-pill-private-bg p-3 text-[13px] text-pill-private">
           {error}
         </div>
       )}
 
       {!data && !error && (
-        <div className="text-sm text-neutral-500">Loading…</div>
+        <div className="text-[13px] text-a-ink-muted">Loading…</div>
       )}
 
       {data && (
-        <div className="space-y-6">
-          <header className="rounded-lg border border-neutral-200 bg-white p-5">
-            <h1 className="text-lg font-semibold text-neutral-900">
+        <div className="space-y-4">
+          {/* Sensitive content notice. The participant chose what to
+              share with the group via the permissions walk-through;
+              this admin view shows the FULL transcript regardless.
+              Reading it without need is a small breach of the trust
+              contract — flag the weight before they scroll. */}
+          <div className="rounded-sm border border-[oklch(88%_0.05_260)] bg-[oklch(97%_0.01_260)] px-3.5 py-2.5 text-[12px] leading-[1.5] text-a-ink-muted">
+            <strong className="text-a-ink">Private transcript.</strong>{" "}
+            This is what the participant said in their private
+            conversation. Open this only with their awareness.
+          </div>
+
+          <header className="rounded-md border border-a-border bg-a-bg-card px-5 py-4 shadow-card">
+            <h1 className="font-p-display text-[22px] font-normal leading-tight text-a-ink">
               {data.participant_name}
             </h1>
-            <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-4">
+            <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1.5 text-[12px] sm:grid-cols-4">
               <Meta label="Phase">
-                <span
-                  className={
-                    data.phase === "complete"
-                      ? "rounded-full bg-green-100 px-2 py-0.5 text-green-800"
-                      : "text-neutral-700"
-                  }
-                >
-                  {PHASE_LABEL[data.phase] ?? data.phase}
-                </span>
+                <PhasePill phase={data.phase} />
               </Meta>
               <Meta label="Status">{data.status || "—"}</Meta>
               <Meta label="Started">{fmtTime(data.started_at)}</Meta>
               <Meta label="Completed">{fmtTime(data.completed_at)}</Meta>
             </dl>
-            <details className="mt-3 text-xs text-neutral-600">
-              <summary className="cursor-pointer hover:text-neutral-900">
+            <details className="mt-3 text-[12px] text-a-ink-muted">
+              <summary className="cursor-pointer transition-colors hover:text-a-ink">
                 Question shown to this participant
               </summary>
-              <pre className="mt-2 whitespace-pre-wrap rounded bg-neutral-50 p-3 font-sans">
+              <pre className="mt-2 whitespace-pre-wrap rounded-sm bg-a-bg-subtle p-3 font-sans text-[12px] leading-[1.55] text-a-ink">
                 {data.question}
               </pre>
             </details>
           </header>
 
-          <section className="rounded-lg border border-neutral-200 bg-white p-5">
-            <h2 className="text-sm font-semibold text-neutral-900">
+          <section className="rounded-md border border-a-border bg-a-bg-card px-5 py-4 shadow-card">
+            <h2 className="text-[13px] font-semibold text-a-ink">
               Transcript
             </h2>
             {data.transcript.length === 0 ? (
-              <div className="mt-3 text-sm text-neutral-500">
+              <div className="mt-3 text-[13px] text-a-ink-muted">
                 No turns recorded.
               </div>
             ) : (
@@ -141,16 +138,17 @@ export function ParticipantDetail({ sessionId, participantId }: Props) {
             )}
           </section>
 
-          <section className="rounded-lg border border-neutral-200 bg-white p-5">
-            <h2 className="text-sm font-semibold text-neutral-900">
+          <section className="rounded-md border border-a-border bg-a-bg-card px-5 py-4 shadow-card">
+            <h2 className="text-[13px] font-semibold text-a-ink">
               Extracted points ({data.extracted_points.length})
             </h2>
-            <p className="mt-1 text-xs text-neutral-600">
-              Each was reviewed by the participant during the permissions
-              walk-through. The badge shows the choice they made.
+            <p className="mt-1 text-[12px] text-a-ink-muted">
+              Each was reviewed by the participant during the
+              permissions walk-through. The badge shows the choice they
+              made.
             </p>
             {data.extracted_points.length === 0 ? (
-              <div className="mt-3 text-sm text-neutral-500">
+              <div className="mt-3 text-[13px] text-a-ink-muted">
                 No points extracted yet.
               </div>
             ) : (
@@ -168,8 +166,8 @@ export function ParticipantDetail({ sessionId, participantId }: Props) {
           </section>
 
           {data.additions.length > 0 && (
-            <section className="rounded-lg border border-neutral-200 bg-white p-5">
-              <h2 className="text-sm font-semibold text-neutral-900">
+            <section className="rounded-md border border-a-border bg-a-bg-card px-5 py-4 shadow-card">
+              <h2 className="text-[13px] font-semibold text-a-ink">
                 Additions ({data.additions.length})
               </h2>
               <ul className="mt-4 space-y-2">
@@ -184,7 +182,7 @@ export function ParticipantDetail({ sessionId, participantId }: Props) {
             </section>
           )}
 
-          <details className="rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600">
+          <details className="rounded-sm border border-a-border bg-a-bg-subtle p-3 text-[11px] text-a-ink-muted">
             <summary className="cursor-pointer">
               Internal — participant_id (storage key)
             </summary>
@@ -207,10 +205,10 @@ function Meta({
 }) {
   return (
     <div>
-      <dt className="font-medium uppercase tracking-wide text-neutral-500">
+      <dt className="text-[10px] font-semibold uppercase tracking-[0.07em] text-a-ink-faint">
         {label}
       </dt>
-      <dd className="mt-0.5 text-neutral-800">{children}</dd>
+      <dd className="mt-1 text-[12px] text-a-ink">{children}</dd>
     </div>
   );
 }
@@ -220,28 +218,30 @@ function Turn({ turn }: { turn: DetailT["transcript"][number] }) {
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div className="max-w-[85%]">
-        <div className="mb-0.5 flex items-center gap-2 text-[10px] uppercase tracking-wide text-neutral-500">
+        <div className="mb-1 flex items-center gap-2 text-[10px] font-medium uppercase tracking-[0.05em] text-a-ink-faint">
           <span>{isUser ? "Participant" : "Facilitator"}</span>
           {turn.via === "voice" && (
-            <span className="rounded-full bg-neutral-100 px-1.5 py-0.5">
+            <span className="rounded-sm bg-a-bg-subtle px-1.5 py-0.5">
               voice
             </span>
           )}
           {turn.detected_language && (
-            <span className="rounded-full bg-neutral-100 px-1.5 py-0.5">
+            <span className="rounded-sm bg-a-bg-subtle px-1.5 py-0.5">
               {turn.detected_language}
             </span>
           )}
           {turn.timestamp && (
-            <span className="font-mono">{fmtTime(turn.timestamp)}</span>
+            <span className="font-mono normal-case tracking-normal">
+              {fmtTime(turn.timestamp)}
+            </span>
           )}
         </div>
         <div
           className={[
-            "rounded-2xl px-4 py-3 text-[14px] leading-relaxed whitespace-pre-wrap",
+            "whitespace-pre-wrap px-3.5 py-2.5 text-[13px] leading-[1.65]",
             isUser
-              ? "bg-neutral-900 text-white"
-              : "bg-neutral-50 border border-neutral-200 text-neutral-800",
+              ? "rounded-[16px_16px_4px_16px] bg-a-ink text-white"
+              : "rounded-[4px_16px_16px_16px] border border-a-border bg-a-bg-subtle text-a-ink",
           ].join(" ")}
         >
           {turn.content}
@@ -264,16 +264,18 @@ function PermissionedItem({
   return (
     <li className="flex items-start gap-3">
       {prefix && (
-        <span className="shrink-0 pt-1 font-mono text-xs text-neutral-500">
+        <span className="shrink-0 pt-0.5 font-mono text-[11px] text-a-ink-faint">
           {prefix}
         </span>
       )}
-      <div className="flex-1 text-sm text-neutral-800">{text}</div>
+      <div className="flex-1 text-[13px] leading-[1.55] text-a-ink">
+        {text}
+      </div>
       <span
-        className={
-          (badge?.cls ?? "bg-neutral-100 text-neutral-600") +
-          " shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium"
-        }
+        className={[
+          "shrink-0 rounded-pill px-2 py-0.5 text-[10px] font-semibold tracking-[0.03em]",
+          badge ? `${badge.bg} ${badge.color}` : "bg-a-bg-subtle text-a-ink-muted",
+        ].join(" ")}
       >
         {badge?.label ?? "unset"}
       </span>

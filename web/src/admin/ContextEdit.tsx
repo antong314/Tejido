@@ -126,17 +126,17 @@ export function ContextEdit({ contextId }: Props) {
             e.preventDefault();
             navigate("/admin/contexts");
           }}
-          className="text-xs text-neutral-600 hover:text-neutral-900"
+          className="text-xs text-a-ink-muted hover:text-a-ink"
         >
           ← back to context library
         </a>
       </div>
 
-      {loading && <div className="text-sm text-neutral-500">Loading…</div>}
+      {loading && <div className="text-sm text-a-ink-muted">Loading…</div>}
 
       {!loading && (
         <form onSubmit={handleSubmit} className="space-y-6">
-          <section className="rounded-lg border border-neutral-200 bg-white p-5">
+          <section className="rounded-md border border-a-border bg-a-bg-card p-5">
             <div className="space-y-4">
               <Field label="Name">
                 <input
@@ -151,7 +151,7 @@ export function ContextEdit({ contextId }: Props) {
                 {isNew ? (
                   <Hint>
                     Will be saved as{" "}
-                    <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[11px] text-neutral-700">
+                    <code className="rounded bg-a-bg-subtle px-1 py-0.5 font-mono text-[11px] text-a-ink">
                       {derivedId || "—"}
                     </code>
                     . The id is derived from the name and used in URLs +
@@ -160,7 +160,7 @@ export function ContextEdit({ contextId }: Props) {
                 ) : (
                   <Hint>
                     Saved as{" "}
-                    <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-[11px] text-neutral-700">
+                    <code className="rounded bg-a-bg-subtle px-1 py-0.5 font-mono text-[11px] text-a-ink">
                       {derivedId}
                     </code>
                     . The id is fixed; renaming only changes how this
@@ -189,13 +189,13 @@ export function ContextEdit({ contextId }: Props) {
           </section>
 
           {(localError || serverError) && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
+            <div className="rounded-md bg-pill-private-bg p-3 text-sm text-pill-private">
               {localError ?? serverError}
             </div>
           )}
 
           {statusMsg && (
-            <div className="rounded-md bg-green-50 p-3 text-sm text-green-800">
+            <div className="rounded-md bg-pill-complete-bg p-3 text-sm text-pill-complete">
               {statusMsg}
             </div>
           )}
@@ -204,7 +204,7 @@ export function ContextEdit({ contextId }: Props) {
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800 disabled:opacity-50"
+              className="rounded-md bg-a-accent px-4 py-2 text-sm font-medium text-white hover:bg-a-accent-dark disabled:opacity-50"
             >
               {submitting
                 ? "Saving…"
@@ -216,7 +216,7 @@ export function ContextEdit({ contextId }: Props) {
               type="button"
               onClick={() => navigate("/admin/contexts")}
               disabled={submitting}
-              className="text-sm text-neutral-600 hover:text-neutral-900"
+              className="text-sm text-a-ink-muted hover:text-a-ink"
             >
               Cancel
             </button>
@@ -229,9 +229,9 @@ export function ContextEdit({ contextId }: Props) {
 
 function inputClass(disabled: boolean): string {
   return [
-    "block w-full rounded-md border border-neutral-300 px-3 py-2 text-sm shadow-sm",
+    "block w-full rounded-md border border-a-border px-3 py-2 text-sm shadow-sm",
     "focus:border-neutral-500 focus:outline-none focus:ring-1 focus:ring-neutral-500",
-    disabled ? "bg-neutral-100 text-neutral-500 cursor-not-allowed" : "bg-white",
+    disabled ? "bg-a-bg-subtle text-a-ink-muted cursor-not-allowed" : "bg-a-bg-card",
   ].join(" ");
 }
 
@@ -244,7 +244,7 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="text-xs font-medium uppercase tracking-wide text-neutral-600">
+      <span className="text-xs font-medium uppercase tracking-wide text-a-ink-muted">
         {label}
       </span>
       <div className="mt-1.5">{children}</div>
@@ -253,5 +253,5 @@ function Field({
 }
 
 function Hint({ children }: { children: React.ReactNode }) {
-  return <p className="mt-1 text-xs text-neutral-500">{children}</p>;
+  return <p className="mt-1 text-xs text-a-ink-muted">{children}</p>;
 }

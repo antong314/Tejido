@@ -1,3 +1,7 @@
+/* Design tokens (CSS custom properties) loaded before Tailwind so the
+   utility classes wired up in tailwind.config.js can reference them. */
+@import "./tejido-tokens.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -10,14 +14,12 @@ body,
 
 body {
   margin: 0;
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
-  background: #fafafa;
-  color: #1c1c1c;
+  /* DM Sans is loaded via Google Fonts in index.html; falls back to system
+     UI on slow connections so first paint isn't blocked. */
+  font-family: "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--p-bg);
+  color: var(--p-ink);
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Side panel + welcome card markdown styling. We don't use the Tailwind

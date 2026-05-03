@@ -1,0 +1,230 @@
+/* ─── Tejido Design Tokens ─────────────────────────────────────────────────
+   Import this file at the top of web/src/index.css:
+   
+     @import './tejido-tokens.css';
+   
+   Or add it to the <head> of web/index.html before your app bundle.
+   ─────────────────────────────────────────────────────────────────────── */
+
+:root {
+
+  /* ── Participant palette — warm ─────────────────────────────────────── */
+  --p-bg:           oklch(97.2% 0.008 75);   /* page background */
+  --p-bg-card:      oklch(99%   0.005 75);   /* card / input background */
+  --p-bg-subtle:    oklch(94%   0.010 75);   /* disabled inputs, hover areas */
+  --p-ink:          oklch(22%   0.015 60);   /* primary text */
+  --p-ink-muted:    oklch(52%   0.012 60);   /* secondary text, labels */
+  --p-ink-faint:    oklch(70%   0.008 60);   /* placeholders, disabled, footnotes */
+  --p-border:       oklch(88%   0.010 70);   /* default borders */
+  --p-border-focus: oklch(62%   0.120 45);   /* input focus border (terracotta) */
+
+  /* Accent — terracotta: warm, earthy, decisive without being aggressive */
+  --p-accent:       oklch(62%   0.120 45);
+  --p-accent-dark:  oklch(54%   0.120 45);   /* hover state */
+  --p-accent-tint:  oklch(93%   0.030 45);   /* focus ring */
+
+  /* User message bubble — deep warm charcoal */
+  --p-bubble-user:  oklch(24%   0.018 60);
+  --p-bubble-text:  oklch(97%   0.005 75);
+
+  /* ── Admin palette — cool ───────────────────────────────────────────── */
+  --a-bg:           oklch(97%   0.005 250);  /* page background */
+  --a-bg-card:      oklch(100%  0.000 0);    /* white cards */
+  --a-bg-subtle:    oklch(95%   0.007 250);  /* table rows, hover, alt backgrounds */
+  --a-ink:          oklch(18%   0.010 260);  /* primary text */
+  --a-ink-muted:    oklch(48%   0.010 260);  /* secondary text */
+  --a-ink-faint:    oklch(68%   0.007 260);  /* table headers, placeholders */
+  --a-border:       oklch(88%   0.007 250);  /* default borders */
+  --a-border-focus: oklch(55%   0.120 265);  /* input focus border (indigo) */
+
+  /* Accent — slate indigo: calm authority */
+  --a-accent:       oklch(55%   0.120 265);
+  --a-accent-dark:  oklch(46%   0.120 265);  /* hover state */
+  --a-accent-tint:  oklch(94%   0.030 265);  /* focus ring */
+
+  /* ── Status / permission pills ──────────────────────────────────────── */
+  --pill-complete:    oklch(50%  0.12 155);   /* sage green */
+  --pill-complete-bg: oklch(93%  0.04 155);
+  --pill-active:      oklch(55%  0.12 265);   /* slate indigo */
+  --pill-active-bg:   oklch(94%  0.03 265);
+  --pill-pending:     oklch(60%  0.10 80);    /* amber */
+  --pill-pending-bg:  oklch(94%  0.04 80);
+  --pill-private:     oklch(45%  0.14 15);    /* muted red */
+  --pill-private-bg:  oklch(95%  0.03 15);
+
+  /* ── Border radii ───────────────────────────────────────────────────── */
+  --radius-sm:   6px;
+  --radius-md:   10px;
+  --radius-lg:   16px;
+  --radius-xl:   24px;
+  --radius-pill: 999px;
+
+  /* ── Shadows ────────────────────────────────────────────────────────── */
+  --shadow-card:  0 1px 3px oklch(0% 0 0 / 0.07), 0 1px 2px oklch(0% 0 0 / 0.04);
+  --shadow-modal: 0 8px 40px oklch(0% 0 0 / 0.18);
+  --shadow-float: 0 4px 24px oklch(0% 0 0 / 0.12);
+
+  /* ── Typography ─────────────────────────────────────────────────────── */
+  /* Font families are loaded via Google Fonts — see web/index.html       */
+  --font-participant-display: 'DM Serif Display', serif;
+  --font-participant-body:    'DM Sans', system-ui, sans-serif;
+  --font-admin-ui:            'Inter Tight', system-ui, sans-serif;
+  --font-mono:                ui-monospace, 'Cascadia Code', 'Fira Mono', monospace;
+}
+
+/* ── Keyframe animations ─────────────────────────────────────────────────── */
+
+/* Typing indicator bounce */
+@keyframes tejidoBounce {
+  0%, 80%, 100% { transform: translateY(0);    opacity: 0.4; }
+  40%           { transform: translateY(-5px); opacity: 1;   }
+}
+
+/* Subtle fade-in for new messages */
+@keyframes tejidoFadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0);   }
+}
+
+/* Modal entrance */
+@keyframes tejidoModalIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to   { opacity: 1; transform: scale(1);    }
+}
+
+/* ── Global resets for both surfaces ────────────────────────────────────── */
+
+/* Participant surface root */
+.tejido-participant {
+  background: var(--p-bg);
+  color: var(--p-ink);
+  font-family: var(--font-participant-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Admin surface root */
+.tejido-admin {
+  background: var(--a-bg);
+  color: var(--a-ink);
+  font-family: var(--font-admin-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Shared utility classes ──────────────────────────────────────────────── */
+
+/* Permission / phase pills */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+.pill--complete   { background: var(--pill-complete-bg);  color: var(--pill-complete);  }
+.pill--active     { background: var(--pill-active-bg);    color: var(--pill-active);    }
+.pill--pending    { background: var(--pill-pending-bg);   color: var(--pill-pending);   }
+.pill--private    { background: var(--pill-private-bg);   color: var(--pill-private);   }
+
+/* Participant CTA button */
+.btn-participant {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 13px 28px;
+  background: var(--p-accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-participant-body);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-participant:hover  { background: var(--p-accent-dark); }
+.btn-participant:active { transform: scale(0.98); }
+.btn-participant:disabled { opacity: 0.5; cursor: default; }
+
+/* Admin primary button */
+.btn-admin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 14px;
+  background: var(--a-accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-admin-ui);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-admin:hover   { background: var(--a-accent-dark); }
+.btn-admin:disabled { opacity: 0.5; cursor: default; }
+
+/* Admin secondary button */
+.btn-admin-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 12px;
+  background: var(--a-bg-card);
+  color: var(--a-ink);
+  border: 1px solid var(--a-border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-admin-ui);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.btn-admin-secondary:hover { background: var(--a-bg-subtle); }
+
+/* Participant text input */
+.input-participant {
+  display: block;
+  width: 100%;
+  padding: 11px 14px;
+  background: var(--p-bg);
+  border: 1.5px solid var(--p-border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-participant-body);
+  font-size: 15px;
+  color: var(--p-ink);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.input-participant:focus {
+  border-color: var(--p-border-focus);
+  box-shadow: 0 0 0 3px var(--p-accent-tint);
+}
+.input-participant::placeholder { color: var(--p-ink-faint); }
+.input-participant:disabled {
+  background: var(--p-bg-subtle);
+  color: var(--p-ink-faint);
+}
+
+/* Admin card */
+.card-admin {
+  background: var(--a-bg-card);
+  border: 1px solid var(--a-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+}
+
+/* Typing indicator dots */
+.typing-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--p-ink-faint);
+  animation: tejidoBounce 1.2s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: 150ms; }
+.typing-dot:nth-child(3) { animation-delay: 300ms; }

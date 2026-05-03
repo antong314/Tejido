@@ -96,7 +96,12 @@ export type ContentPart =
       // we render the resolvedText in place of the buttons.
       resolved: boolean;
       resolvedText: string | null;
-    };
+    }
+  // A serif-italic, terracotta-bordered callout — used in the welcome
+  // message to set the question apart from the surrounding prose.
+  // derive_messages.ts emits this part type for the welcome only;
+  // assistant messages from the LLM never contain it.
+  | { type: "question_callout"; text: string };
 
 export interface ChatMessage {
   id: string;
