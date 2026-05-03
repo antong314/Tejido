@@ -47,7 +47,7 @@ def _configure_logging() -> None:
 async def _run_combined(args: argparse.Namespace) -> None:
     app_config = load_app_config()
     whisper = WhisperTranscriber(
-        model_name="medium",
+        model_name="base",
         models_dir=app_config.models_dir,
     )
     registry = SessionRegistry(app_config=app_config, whisper=whisper)
